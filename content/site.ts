@@ -103,13 +103,9 @@ export const site: SiteContent = {
     greeting: "Hi, i'm Vishal",
     tagline: "Senior Frontend Engineer",
     intro:
-      "A senior frontend engineer with ~7 years of building and remixing " +
-      "interfaces on the web — experienced, but still curious. I care about " +
-      "the details that make something feel right rather than merely work, " +
-      "and I'm currently learning to build for platforms beyond the browser.",
+      "A senior frontend engineer with nearly seven years building interfaces for the web. Experienced, but still curious. Most of my attention goes to how an interface behaves once real data and real people reach it, and I'm now learning to build beyond the browser.",
     description:
-      "Frontend engineer in Bengaluru, building interfaces on the web for " +
-      "about seven years. Currently learning to build for other platforms.",
+      "Frontend engineer in Bengaluru with nearly seven years building interfaces for the web. Currently learning to build beyond the browser.",
     url: process.env.SITE_URL ?? "https://localhost:3000",
     avatar: "/profile-picture.JPG",
     initials: "VG",
@@ -142,11 +138,7 @@ export const site: SiteContent = {
       start: "2023-09",
       end: "2026-06",
       description:
-        "An LLM-driven root cause analysis tool for SRE teams at large " +
-        "enterprises. Built a dense, data-heavy debugging surface — " +
-        "brush-selectable time-series charts, many kinds of evidence rendered " +
-        "side by side, and an inline-widget system letting the model answer " +
-        "with interactive components instead of text.",
+        "An LLM-driven root cause analysis tool for SRE teams at large enterprises. Built the debugging surface: dense time-series charts you can brush-select to drive the analysis, several kinds of evidence rendered side by side, and an inline-widget system so the model could answer with interactive components instead of plain text.",
     },
     {
       company: "ChaiPoint",
@@ -155,12 +147,7 @@ export const site: SiteContent = {
       start: "2020-03",
       end: "2023-09",
       description:
-        "A retail chain's product suite: in-store POS, back-office console, " +
-        "customer-facing ordering, and a long tail of internal tools. I owned " +
-        "the frontend end-to-end on most of them, and architected the " +
-        "offline-first POS that keeps taking orders with no network — " +
-        "IndexedDB state, a FIFO sync queue, service-worker cache " +
-        "invalidation — then led its rewrite.",
+        "A retail chain's product suite: in-store POS, back-office console, customer-facing ordering, plus a set of internal tools. I owned the frontend end to end on most of them. The POS was the interesting one. I led its rewrite onto an IndexedDB storage architecture, which is what let it keep taking orders with no network, with a FIFO queue syncing them up once it returned. A separate service-worker update flow handled getting new code onto the terminals.",
     },
     {
       company: "YouPlus",
@@ -169,31 +156,17 @@ export const site: SiteContent = {
       start: "2019-07",
       end: "2020-02",
       description:
-        "Built interactive dashboards and integrated REST APIs. Shipped " +
-        "functional prototypes that were promoted to production features.",
+        "Built interactive dashboards and integrated REST APIs. A few of the prototypes I shipped here became production features.",
     },
   ],
 
   about: {
     heading: "About",
     paragraphs: [
-      "I'm a frontend engineer in Bengaluru. Most of my work has been on small " +
-      "teams where owning a surface end-to-end — architecture, performance, " +
-      "and the product calls in between — was simply the job.",
-      "The thread running through it is making complicated systems legible. " +
-      "Retail operations that have to keep running in unpredictable " +
-      "environments, used in ways nobody planned for. Tools that surface an " +
-      "enormous amount of data and have to protect the user from the noise " +
-      "in it — enriching the boring parts until they actually say something.",
-      "I think about this at the system level as much as the pixel level: how " +
-      "the pieces fit, where the edges are, what happens under load. The " +
-      "unintended behaviour is the part I look forward to — the ways a user " +
-      "will break something, and the ways the product will break on its own.",
-      "I want to be a human interface engineer in the real sense of it. That " +
-      "means understanding rendering and state management at the core, not " +
-      "through the lens of whichever library is current — so that building " +
-      "an interface is something I can do on any platform, not just the one " +
-      "I happen to know.",
+      "I'm a frontend engineer in Bengaluru. Most of my work has been on small teams, where owning a surface end to end was simply the job: the architecture, the performance, and the product decisions in between.",
+      "Most of that work comes down to making complicated systems legible. Retail operations have to keep running in unpredictable conditions, and they get used in ways nobody planned for. Debugging tools have to surface an enormous amount of data without burying the person reading it, which usually means enriching dull records until they say something useful.",
+      "I think about this at the system level as much as the pixel level: how the pieces fit together, where the edges are, and what happens under load. I genuinely enjoy the unintended behaviour, both the ways a user will break something and the ways a product will break on its own.",
+      "What I want next is to be a human interface engineer in the fullest sense of the term: to understand rendering and state management at their core, rather than through whichever library happens to be current. Then building an interface becomes something I can do on any platform I need to.",
     ],
   },
 };
