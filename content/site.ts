@@ -15,6 +15,13 @@ export interface Profile {
   /** Not rendered on the page — used for the browser tab title. */
   tagline: string;
   intro: string;
+  /**
+   * Not rendered on the page. Used for search results and link previews, which
+   * truncate around 160 characters — keep it under that.
+   */
+  description: string;
+  /** Absolute site URL, from SITE_URL. Needed for absolute OG image links. */
+  url: string;
   /** Path in /public, or null to render the <Monogram /> fallback */
   avatar: string | null;
   /** Used by the monogram fallback */
@@ -100,6 +107,10 @@ export const site: SiteContent = {
       "interfaces on the web — experienced, but still curious. I care about " +
       "the details that make something feel right rather than merely work, " +
       "and I'm currently learning to build for platforms beyond the browser.",
+    description:
+      "Frontend engineer in Bengaluru, building interfaces on the web for " +
+      "about seven years. Currently learning to build for other platforms.",
+    url: process.env.SITE_URL ?? "https://localhost:3000",
     avatar: "/profile-picture.JPG",
     initials: "VG",
     // Kept deliberately short — the strongest signals only, not the full list.

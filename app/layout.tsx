@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
+import { Analytics } from "@vercel/analytics/next";
 import "./globals.css";
 import Profile from "@/components/Profile";
 import { site } from "@/content/site";
@@ -14,12 +15,45 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
+const { profile } = site;
+const title = `${profile.name} — ${profile.tagline}`;
+
 export const metadata: Metadata = {
+  // Resolves the relative image paths below into the absolute URLs that
+  // link-preview crawlers require.
+  metadataBase: new URL(profile.url),
   title: {
-    default: `${site.profile.name} — ${site.profile.tagline}`,
-    template: `%s — ${site.profile.name}`,
+    default: title,
+    template: `%s — ${profile.name}`,
   },
-  description: site.profile.intro,
+  description: profile.description,
+  // The profile picture doubles as the link preview image.
+  icons: { icon: profile.avatar ?? undefined },
+  openGraph: {
+    type: "profile",
+    title,
+    description: profile.description,
+    url: "/",
+    siteName: profile.name,
+    // Width/height matter: several crawlers skip the preview entirely rather
+    // than download the image to measure it.
+    images: profile.avatar
+      ? [
+          {
+            url: profile.avatar,
+            width: 896,
+            height: 896,
+            alt: profile.name,
+          },
+        ]
+      : undefined,
+  },
+  twitter: {
+    card: "summary",
+    title,
+    description: profile.description,
+    images: profile.avatar ? [profile.avatar] : undefined,
+  },
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
@@ -38,6 +72,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
           <Profile />
           <main className="mt-10">{children}</main>
         </div>
+        <Analytics />
       </body>
     </html>
   );
