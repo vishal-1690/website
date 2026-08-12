@@ -1,26 +1,258 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  color-scheme: dark;
+
+  /* surfaces */
+  --bg: #0a0a0b;
+  --surface: #121214;
+  --border: #26262b;
+  /* Thick tile borders read as their own surface, not a hairline. */
+  --border-tile: #4a4a55;
+
+  /* text — primary prose is near-white; secondary stays clearly secondary */
+  --text: #f2f2f4;
+  --text-muted: #a1a1aa;
+  --text-faint: #6b6b76;
+
+  /* Retained only for selection and focus rings — never for prose or links. */
+  --accent: #7cf7c4;
+  --accent-dim: #7cf7c433;
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
+  --color-background: var(--bg);
+  --color-surface: var(--surface);
+  --color-border: var(--border);
+  --color-border-tile: var(--border-tile);
+  --color-foreground: var(--text);
+  --color-muted: var(--text-muted);
+  --color-faint: var(--text-faint);
+  --color-accent: var(--accent);
+
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
+
+  /* Typography-led scale: fewer steps, large body. */
+  --text-2xs: 0.875rem; /* 14px — dates, meta */
+  --text-xs: 0.9375rem; /* 15px — tab labels */
+  --text-sm: 1.0625rem; /* 17px — secondary prose */
+  --text-base: 1.25rem; /* 20px — body, headings, role lines */
+  --text-xl: 2rem; /* 32px — name */
+
+  --radius-tab: 10px; /* tab track + active chip — rounded rectangle */
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+html {
+  /* Stops the centred column shifting when a page is short enough to lose its
+     scrollbar. */
+  scrollbar-gutter: stable;
+
+  /* Everything else is in rem, so this one value scales type, spacing, and
+     container widths together. Percentages and rem (never a bare px) so a
+     reader's own font-size preference still applies, and vw is additive rather
+     than the sole term so the text stays zoomable. */
+  font-size: clamp(93.75%, 0.9rem + 0.5vw, 125%);
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-sans), ui-sans-serif, system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* --- Typesetting ------------------------------------------------------------
+   Optical sizing: type set large needs tighter tracking, not the default.
+   Leading runs the other way — headings tighten, body stays open. */
+h1 {
+  letter-spacing: -0.028em;
+  line-height: 1.1;
+}
+
+h2,
+h3 {
+  letter-spacing: -0.016em;
+  line-height: 1.25;
+}
+
+p {
+  letter-spacing: -0.006em;
+}
+
+/* Numerals sit better slightly open at small sizes. */
+.row-date {
+  letter-spacing: 0.01em;
+}
+
+::selection {
+  background: var(--accent-dim);
+  color: var(--text);
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+  border-radius: 4px;
+}
+
+/* --- Squircle ---------------------------------------------------------------
+   `border-radius` alone gives a rounded rectangle. `corner-shape: superellipse`
+   produces the continuous curve of an actual squircle; browsers without it fall
+   back to the rounded rectangle, which is an acceptable degradation. */
+.squircle {
+  border-radius: 28%;
+  corner-shape: superellipse(1.6);
+}
+
+/* Fills the squircle wrapper — corner-shape can't clip the <img> directly. */
+.sticker > img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+/* --- Header layout --------------------------------------------------------*/
+.header-grid {
+  display: block;
+}
+
+@media (min-width: 768px) {
+  .header-grid {
+    position: relative;
+  }
+
+  /* Out of flow, so the avatar's size never feeds back into the content column.
+     Anchored to the column's left edge and grows leftward from there. */
+  .avatar-float {
+    position: absolute;
+    top: 0;
+    right: calc(100% + 2.5rem);
+  }
+}
+
+/* --- Metallic button --------------------------------------------------------
+   The one solid, high-contrast control on the page. Gradient plus a top inset
+   highlight reads as metal catching light from above. */
+.btn-metal {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 8px;
+  padding: 0.4rem 0.85rem;
+  color: #16161a;
+  background: linear-gradient(180deg, #ffffff 0%, #e2e2e6 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.9),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.08),
+    0 1px 2px rgba(0, 0, 0, 0.5),
+    0 2px 6px rgba(0, 0, 0, 0.35);
+  transition:
+    background 160ms ease,
+    box-shadow 160ms ease,
+    transform 160ms ease;
+}
+
+.btn-metal:hover {
+  background: linear-gradient(180deg, #ffffff 0%, #ededf1 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.9),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.08),
+    0 2px 4px rgba(0, 0, 0, 0.5),
+    0 4px 10px rgba(0, 0, 0, 0.4);
+}
+
+.btn-metal:active {
+  transform: translateY(1px);
+  box-shadow:
+    inset 0 1px 2px rgba(0, 0, 0, 0.2),
+    0 1px 1px rgba(0, 0, 0, 0.4);
+}
+
+/* Hover gating throughout: touch devices otherwise keep the state stuck after
+   a tap. */
+.skill {
+  transition: color 180ms ease;
+}
+
+@media (hover: hover) {
+  .skill:hover {
+    color: var(--text);
+  }
+}
+
+/* Underlines are always visible and strengthen on hover. */
+.link-underline {
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+  text-decoration-color: color-mix(in srgb, currentColor 40%, transparent);
+  transition:
+    text-decoration-color 160ms ease,
+    color 160ms ease;
+}
+
+.link-underline:hover {
+  text-decoration-color: currentColor;
+}
+
+/* --- The one animation ------------------------------------------------------
+   app/template.tsx remounts on every tab change, which restarts this keyframe.
+   `both` keeps the end state applied, so content is never left invisible. */
+@keyframes blur-in {
+  from {
+    opacity: 0;
+    filter: blur(6px);
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    filter: blur(0);
+    transform: none;
+  }
+}
+
+.route-body {
+  animation: blur-in 260ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+/* --- Segmented tabs ---------------------------------------------------------
+   The inverse of .btn-metal: a raised track with the active tab recessed into
+   it. The active tab paints its own background, so there is no separately
+   positioned pill to keep in sync. */
+.nav-well {
+  border-radius: var(--radius-tab);
+  background: linear-gradient(180deg, #33333b 0%, #2a2a31 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.25),
+    0 1px 2px rgba(0, 0, 0, 0.4);
+}
+
+.nav-tab {
+  border-radius: calc(var(--radius-tab) - 4px);
+  transition:
+    color 160ms ease,
+    background 160ms ease,
+    box-shadow 160ms ease;
+}
+
+.nav-tab-active {
+  color: var(--text);
+  background: linear-gradient(180deg, #0e0e11 0%, #16161a 100%);
+  box-shadow:
+    inset 0 2px 4px rgba(0, 0, 0, 0.8),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.06);
+}
+
+/* Row hover reads in the type, not in a background fill. */
+@media (hover: hover) {
+  .work-row:hover .row-date {
+    color: var(--text);
+  }
+}
+
+.row-date {
+  transition: color 160ms ease;
 }
