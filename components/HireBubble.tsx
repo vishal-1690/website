@@ -1,11 +1,12 @@
 "use client";
 
 import { useEffect, useId, useRef, useState } from "react";
+import { createAnimatable, createTimeline, cubicBezier } from "animejs";
 import { site } from "@/content/site";
 
 /**
  * Thought bubble that follows the profile picture. Wraps the avatar so it can
- * catch hover and click on it.
+ * catch hover intent on it.
  *
  * Three trailing circles plus the body share an SVG goo filter (see the filter
  * below and `.goo-layer` in globals.css). The filter blurs their alpha into one
@@ -21,14 +22,21 @@ import { site } from "@/content/site";
  * are reading it.
  */
 
-/** Matches the longest exit delay + duration in globals.css. */
-const EXIT_MS = 840;
 /** How long the pointer must remain over the avatar before the bubble opens. */
 const HOVER_DELAY_MS = 300;
 /** Where the bubble settles once the avatar is gone, in viewport px. */
 const PARKED = { top: 24, left: 24 };
-/** Per-frame easing toward the target. Lower = laggier, springier follow. */
-const FOLLOW = 0.14;
+/** Retarget duration for live position and tail movement. */
+const FOLLOW_DURATION_MS = 220;
+/** Clear space between the filtered tail and the drawable viewport edge. */
+const TAIL_VIEWPORT_GUTTER = 16;
+
+/** Circle centres/radii in the tail's unrotated coordinate system. */
+const TAIL_DROPS = [
+  { x: 0, y: 6, radius: 8 },
+  { x: -5.5, y: 20.5, radius: 5.5 },
+  { x: -9.5, y: 32.5, radius: 3.5 },
+];
 
 type Phase = "idle" | "in" | "out";
 
@@ -40,7 +48,6 @@ export default function HireBubble({
   const [phase, setPhase] = useState<Phase>("idle");
   const wrapRef = useRef<HTMLDivElement>(null);
   const rootRef = useRef<HTMLDivElement>(null);
-  const exitTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const hoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const { profile } = site;
   // Desktop and mobile each render an instance, so the filter id must be
@@ -56,57 +63,147 @@ export default function HireBubble({
 
   useEffect(
     () => () => {
-      if (exitTimer.current) clearTimeout(exitTimer.current);
       if (hoverTimer.current) clearTimeout(hoverTimer.current);
     },
     [],
   );
 
   /**
+   * Anime.js owns the finite entry/exit choreography. Positioning uses a
+   * separate animatable below because its targets change during scrolling.
+   */
+  useEffect(() => {
+    if (phase === "idle") return;
+
+    const root = rootRef.current;
+    if (!root) return;
+
+    const body = root.querySelector<SVGSVGElement>(".goo-body");
+    const shape = root.querySelector<SVGRectElement>(".goo-body-shape");
+    const content = root.querySelector<HTMLDivElement>(".hire-content");
+    const drop1 = root.querySelector<HTMLElement>(".goo-drop-1");
+    const drop2 = root.querySelector<HTMLElement>(".goo-drop-2");
+    const drop3 = root.querySelector<HTMLElement>(".goo-drop-3");
+
+    if (!body || !shape || !content || !drop1 || !drop2 || !drop3) return;
+
+    const pop = cubicBezier(0.34, 1.56, 0.64, 1);
+    const collapse = cubicBezier(0.4, 0, 1, 1);
+
+    if (phase === "in") {
+      const timeline = createTimeline()
+        // Explicit from/to values matter on the pristine page: Anime cannot
+        // infer a numeric scale of zero reliably from an external CSS matrix.
+        .add(drop3, { scale: [0, 1], duration: 340, ease: pop }, 0)
+        .add(drop2, { scale: [0, 1], duration: 340, ease: pop }, 110)
+        .add(drop1, { scale: [0, 1], duration: 340, ease: pop }, 220)
+        .add(
+          body,
+          {
+            scaleX: [0, 1],
+            scaleY: [0, 1],
+            duration: 160,
+            ease: pop,
+          },
+          330,
+        )
+        // The body starts in the same 37x37 state that exit leaves behind:
+        // first scale that true circle up, then grow its SVG geometry into the
+        // capsule. Initial load and hover re-entry now follow the same path.
+        .add(shape, { width: 140, duration: 260, ease: pop }, 490)
+        .add(
+          content,
+          { opacity: 1, scale: 1, duration: 180, ease: pop },
+          620,
+        );
+
+      return () => {
+        timeline.cancel();
+      };
+    }
+
+    const timeline = createTimeline({
+      onComplete: () => setPhase("idle"),
+    })
+      .add(
+        content,
+        { opacity: 0, scale: 0.96, duration: 120, ease: collapse },
+        0,
+      )
+      // Morph the SVG geometry to a true 37x37 circle without flattening its
+      // end caps, then scale that circle away.
+      .add(shape, { width: 37, duration: 234, ease: collapse }, 100)
+      .add(
+        body,
+        { scaleX: 0, scaleY: 0, duration: 126, ease: collapse },
+        334,
+      )
+      // The connector only disappears after the main bubble is gone.
+      .add(drop1, { scale: 0, duration: 220, ease: collapse }, 460)
+      .add(drop2, { scale: 0, duration: 220, ease: collapse }, 530)
+      .add(drop3, { scale: 0, duration: 220, ease: collapse }, 600);
+
+    return () => {
+      timeline.cancel();
+    };
+  }, [phase]);
+
+  /**
    * The bubble is `fixed` and its position is driven here rather than by CSS.
    *
    * `sticky` cannot do this job: it is confined to its containing block, and
    * the wrapper is only as tall as the avatar, so it would unstick almost
-   * immediately. Instead each frame reads where the avatar actually is, eases
-   * the bubble toward the spot just above it, and clamps to the top-left of
-   * the viewport once the avatar has scrolled away — so the bubble slides
-   * smoothly into place instead of snapping between two states.
+   * immediately. Scroll/resize events schedule one geometry read, then Anime
+   * eases the bubble toward the spot just above the avatar. The target clamps
+   * to the top-left once the avatar has scrolled away, so there is no discrete
+   * absolute/fixed state change.
    *
    * The tail rotates to keep pointing back at the avatar, so when the avatar
    * is below the viewport the circles swing round and trail downward.
    *
-   * The loop stops once nothing is left to interpolate, and scroll or resize
-   * wakes it again — it does not run a frame callback while the page is still.
+   * Trigonometry remains here because Anime interpolates values; it does not
+   * know viewport geometry. Anime owns only x/y/rotation interpolation and
+   * stops its internal work automatically after reaching each new target.
    */
   useEffect(() => {
     const wrap = wrapRef.current;
     const root = rootRef.current;
     if (!wrap || !root) return;
 
+    const tail = root.querySelector<HTMLElement>(".goo-tail");
+    if (!tail) return;
+
     const reduce = window.matchMedia(
       "(prefers-reduced-motion: reduce)",
     ).matches;
 
-    let raf = 0;
-    let x: number | null = null;
-    let y: number | null = null;
-    let angle: number | null = null;
+    const followEase = cubicBezier(0.16, 1, 0.3, 1);
+    const position = createAnimatable(root, {
+      x: { unit: "px", duration: FOLLOW_DURATION_MS, ease: followEase },
+      y: { unit: "px", duration: FOLLOW_DURATION_MS, ease: followEase },
+    });
+    const tailRotation = createAnimatable(tail, {
+      rotate: {
+        unit: "deg",
+        duration: FOLLOW_DURATION_MS,
+        ease: followEase,
+      },
+    });
 
-    const tick = () => {
+    let measureRaf = 0;
+    let initialized = false;
+
+    const updateTargets = () => {
       const a = wrap.getBoundingClientRect();
 
       /* Desktop and mobile each render an instance, and the one for the other
          breakpoint sits inside a `display: none` parent — every measurement
-         comes back zero. Bail out before the maths runs on garbage, and keep
-         the loop alive so this instance starts tracking the moment its
-         breakpoint becomes the active one. Without this the hidden instance
-         settled at the parked position with a stale offsetHeight of 0, and
-         stayed frozen there after a breakpoint change. */
+         comes back zero. Bail out before the maths runs on garbage. The
+         ResizeObserver below schedules a fresh measurement when this instance
+         becomes visible at another breakpoint. */
       if (a.width === 0 && a.height === 0) {
         root.style.visibility = "hidden";
-        // Stop rather than spin — the ResizeObserver below wakes this instance
-        // when its breakpoint makes the avatar visible again.
-        raf = 0;
+        initialized = false;
         return;
       }
       root.style.visibility = "";
@@ -119,7 +216,7 @@ export default function HireBubble({
 
       const maxX = window.innerWidth - width - 16;
       const targetX = Math.min(Math.max(rawX, PARKED.left), Math.max(maxX, 16));
-      const targetY = Math.max(rawY, PARKED.top);
+      const baseTargetY = Math.max(rawY, PARKED.top);
 
       const cx = a.left + a.width / 2;
       const cy = a.top + a.height / 2;
@@ -137,17 +234,58 @@ export default function HireBubble({
       const h = root.offsetHeight;
       const r = h / 2;
       const capX = targetX + r;
-      const capY = targetY + r;
 
-      const bearing = Math.atan2(cy - capY, cx - capX);
-      const norm = ((bearing % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI);
-      const clamped = Math.max(
-        (3 * Math.PI) / 4,
-        Math.min((5 * Math.PI) / 4, norm),
-      );
+      const geometryAt = (bubbleY: number) => {
+        const capY = bubbleY + r;
+        const bearing = Math.atan2(cy - capY, cx - capX);
+        const norm =
+          ((bearing % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI);
+        const clamped = Math.max(
+          (3 * Math.PI) / 4,
+          Math.min((5 * Math.PI) / 4, norm),
+        );
 
-      const jointX = capX + Math.cos(clamped) * r;
-      const jointY = capY + Math.sin(clamped) * r;
+        return {
+          clamped,
+          jointX: capX + Math.cos(clamped) * r,
+          jointY: capY + Math.sin(clamped) * r,
+        };
+      };
+
+      const safeAreaTop =
+        Number.parseFloat(
+          getComputedStyle(document.documentElement).getPropertyValue(
+            "--safe-area-top",
+          ),
+        ) || 0;
+
+      let targetY = baseTargetY;
+      let geometry = geometryAt(targetY);
+
+      /* A larger filter box prevents the tail from being clipped by its own
+         element, but no compositor can retain pixels above the viewport. When
+         the tail rotates upward, calculate the top edge of all three rotated
+         circles and lower the body just enough to keep that edge drawable.
+         Two passes account for the small bearing change caused by the move. */
+      for (let i = 0; i < 2; i += 1) {
+        const rotation = geometry.clamped - Math.PI / 2;
+        const sin = Math.sin(rotation);
+        const cos = Math.cos(rotation);
+        const jointY = geometry.jointY - targetY;
+        const tailTop = Math.min(
+          ...TAIL_DROPS.map(
+            (drop) =>
+              jointY + sin * drop.x + cos * drop.y - drop.radius,
+          ),
+        );
+        targetY = Math.max(
+          baseTargetY,
+          safeAreaTop + TAIL_VIEWPORT_GUTTER - tailTop,
+        );
+        geometry = geometryAt(targetY);
+      }
+
+      const { clamped, jointX, jointY } = geometry;
 
       /* The tail must always trail AWAY from the body, so its direction is the
          joint's own outward normal — the same bearing that placed the joint on
@@ -159,62 +297,55 @@ export default function HireBubble({
          direction, so the rotation is the normal minus 90. */
       const targetAngle = (clamped * 180) / Math.PI - 90;
 
-      if (x === null || y === null || angle === null || reduce) {
-        x = targetX;
-        y = targetY;
-        angle = targetAngle;
+      const snap = reduce || !initialized;
+      if (snap) {
+        position.x(targetX, 0);
+        position.y(targetY, 0);
+        tailRotation.rotate(targetAngle, 0);
       } else {
-        x += (targetX - x) * FOLLOW;
-        y += (targetY - y) * FOLLOW;
-        angle += (targetAngle - angle) * FOLLOW;
+        /* Animatable setters retain a duration override. The initial 0ms snap
+           therefore has to be followed by an explicit normal duration; if it
+           is omitted, every later update also snaps and the tail appears to
+           flip between its two arc limits. */
+        position.x(targetX, FOLLOW_DURATION_MS);
+        position.y(targetY, FOLLOW_DURATION_MS);
+        tailRotation.rotate(targetAngle, FOLLOW_DURATION_MS);
       }
+      initialized = true;
 
-      root.style.transform = `translate3d(${x}px, ${y}px, 0)`;
-      root.style.setProperty("--tail-angle", `${angle}deg`);
       // Joint expressed relative to the root, so the tail pivots from the
       // point where it actually meets the body's rounded edge.
       root.style.setProperty("--joint-x", `${jointX - targetX}px`);
       root.style.setProperty("--joint-y", `${jointY - targetY}px`);
-
-      // Once everything has settled there is nothing left to interpolate, so
-      // stop the loop rather than burning a frame callback forever. Scroll and
-      // resize wake it back up.
-      const settled =
-        Math.abs(targetX - x) < 0.1 &&
-        Math.abs(targetY - y) < 0.1 &&
-        Math.abs(targetAngle - angle) < 0.1;
-
-      if (settled) {
-        // Snap off the sub-pixel remainder so it rests on exact values.
-        x = targetX;
-        y = targetY;
-        angle = targetAngle;
-        raf = 0;
-        return;
-      }
-
-      raf = requestAnimationFrame(tick);
     };
 
-    const wake = () => {
-      if (!raf) raf = requestAnimationFrame(tick);
+    // Scroll can dispatch faster than a display refresh. Coalesce those events
+    // into one layout read per frame, then hand interpolation to Anime.js.
+    const scheduleUpdate = () => {
+      if (measureRaf) return;
+      measureRaf = requestAnimationFrame(() => {
+        measureRaf = 0;
+        updateTargets();
+      });
     };
 
-    raf = requestAnimationFrame(tick);
-    window.addEventListener("scroll", wake, { passive: true });
-    window.addEventListener("resize", wake);
+    scheduleUpdate();
+    window.addEventListener("scroll", scheduleUpdate, { passive: true });
+    window.addEventListener("resize", scheduleUpdate);
 
     /* A media-query breakpoint flips which instance is visible without firing
        scroll, and on a phone `resize` may never fire at all. Watching the
        wrapper's own box catches the transition from 0x0 to real dimensions. */
-    const ro = new ResizeObserver(wake);
+    const ro = new ResizeObserver(scheduleUpdate);
     ro.observe(wrap);
 
     return () => {
-      if (raf) cancelAnimationFrame(raf);
+      if (measureRaf) cancelAnimationFrame(measureRaf);
       ro.disconnect();
-      window.removeEventListener("scroll", wake);
-      window.removeEventListener("resize", wake);
+      window.removeEventListener("scroll", scheduleUpdate);
+      window.removeEventListener("resize", scheduleUpdate);
+      position.revert();
+      tailRotation.revert();
     };
   }, []);
 
@@ -222,11 +353,6 @@ export default function HireBubble({
     if (hoverTimer.current) {
       clearTimeout(hoverTimer.current);
       hoverTimer.current = null;
-    }
-    // Cancel a pending unmount so re-entry mid-exit picks straight back up.
-    if (exitTimer.current) {
-      clearTimeout(exitTimer.current);
-      exitTimer.current = null;
     }
     setPhase("in");
   }
@@ -249,7 +375,6 @@ export default function HireBubble({
   /** Only ever called explicitly via the X. */
   function hide() {
     setPhase("out");
-    exitTimer.current = setTimeout(() => setPhase("idle"), EXIT_MS);
   }
 
   if (!profile.available) return <>{children}</>;
@@ -317,7 +442,7 @@ export default function HireBubble({
           >
             <rect
               className="goo-body-shape"
-              width="140"
+              width="37"
               height="37"
               rx="18.5"
               ry="18.5"

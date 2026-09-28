@@ -2,6 +2,10 @@
 
 :root {
   color-scheme: dark;
+  /* Read by the thought-bubble geometry pass. This remains 0 on browsers that
+     already inset the layout viewport and becomes the hardware safe area when
+     an iOS web view exposes edge-to-edge content. */
+  --safe-area-top: env(safe-area-inset-top, 0px);
 
   /* surfaces */
   --bg: #0a0a0b;
@@ -123,9 +127,9 @@ p {
 
    The filtered layer holds only shapes. Text lives in a sibling above it,
    because alpha thresholding destroys antialiased glyph edges. */
-/* Fixed, with its position written every frame by the rAF loop in
-   HireBubble.tsx — `top`/`left` stay at 0 and the transform does the work, so
-   the follow is composited rather than triggering layout. */
+/* Fixed, with x/y animated by Anime.js in HireBubble.tsx. `top`/`left` stay at
+   0 and transforms do the visual work, so following is composited rather than
+   triggering layout on every interpolation frame. */
 .hire-root {
   position: fixed;
   top: 0;
@@ -214,14 +218,12 @@ p {
    stepping left toward the avatar. Each overlaps its neighbour enough for the
    goo filter to keep a neck of white attached between them.
 
-   Everything starts collapsed. The sequence below pops them in smallest-first
-   (3 -> 2 -> 1), then inflates the body — a thought forming rather than a
-   panel sliding in. Nothing loops; the motion happens once. */
+   Everything starts collapsed. Anime.js writes the finite entry/exit
+   choreography inline; CSS only owns the resting geometry. */
 .goo-drop {
   border-radius: 50%;
   transform-origin: center;
   transform: scale(0);
-  transition: transform 340ms cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
 /* The SVG body owns the silhouette and animation. It first resolves to a
@@ -230,111 +232,15 @@ p {
    in the body's geometry. */
 .goo-body {
   transform-origin: left center;
-  transform: scale(0);
+  /* Match the exact transform properties Anime.js animates. Starting from the
+     shorthand scale() made the first reveal compose scale + scaleX/scaleY;
+     after one exit Anime had normalized it, which is why hover re-entry alone
+     looked correct. */
+  transform: scaleX(0) scaleY(0);
 }
 
-@keyframes goo-body-out {
-  0% {
-    transform: scale(1);
-  }
-  65% {
-    /* The rect has finished morphing into a circle before scaling begins. */
-    transform: scale(1);
-  }
-  100% {
-    transform: scale(0);
-  }
-}
-
-/* Shrink the SVG geometry itself rather than scaleX-ing the capsule. This
-   preserves its 18.5px circular end caps, producing a real 37x37 circle. */
-@keyframes goo-body-shape-out {
-  0% {
-    width: 140px;
-  }
-  65%,
-  100% {
-    width: 37px;
-  }
-}
-
-@keyframes goo-body-in {
-  0% {
-    transform: scaleX(0) scaleY(0);
-  }
-  38% {
-    transform: scaleX(0.263) scaleY(1);
-  }
-  100% {
-    transform: scaleX(1) scaleY(1);
-  }
-}
-
-/* --- Entry: smallest circle first, then up the chain, then the body --------*/
-.hire-root[data-phase="in"] .goo-drop-3 {
-  transform: scale(1);
-  transition-delay: 0ms;
-}
-
-.hire-root[data-phase="in"] .goo-drop-2 {
-  transform: scale(1);
-  transition-delay: 110ms;
-}
-
-.hire-root[data-phase="in"] .goo-drop-1 {
-  transform: scale(1);
-  transition-delay: 220ms;
-}
-
-.hire-root[data-phase="in"] .goo-body {
-  animation: goo-body-in 420ms cubic-bezier(0.34, 1.56, 0.64, 1) 330ms both;
-}
-
-/* Content is an independent pop layered over the already-grown SVG body. */
-.hire-root[data-phase="in"] .hire-content {
-  opacity: 1;
-  transform: scale(1);
-  transition-delay: 620ms;
-}
-
-/* --- Exit: the same sequence reversed -------------------------------------*/
-.hire-root[data-phase="out"] .hire-content {
-  opacity: 0;
-  transform: scale(0.96);
-  transition-delay: 0ms;
-  transition-duration: 120ms;
-}
-
-.hire-root[data-phase="out"] .goo-body {
-  animation: goo-body-out 360ms cubic-bezier(0.4, 0, 1, 1) 100ms both;
-}
-
-.hire-root[data-phase="out"] .goo-body-shape {
-  animation: goo-body-shape-out 360ms cubic-bezier(0.4, 0, 1, 1) 100ms both;
-}
-
-.hire-root[data-phase="out"] .goo-drop-1 {
-  transform: scale(0);
-  transition-delay: 460ms;
-  transition-duration: 220ms;
-}
-
-.hire-root[data-phase="out"] .goo-drop-2 {
-  transform: scale(0);
-  transition-delay: 530ms;
-  transition-duration: 220ms;
-}
-
-.hire-root[data-phase="out"] .goo-drop-3 {
-  transform: scale(0);
-  transition-delay: 600ms;
-  transition-duration: 220ms;
-}
-
-/* The tail pivots from the body's lower-left corner. The rAF loop writes
-   --tail-angle so the circles keep pointing back at the avatar as it scrolls
-   away, rather than trailing off at a fixed angle. */
-/* Pivots from --joint-x/--joint-y, which the rAF loop slides around the body's
+/* Anime.js rotates the tail toward the avatar. It pivots from
+   --joint-x/--joint-y, which the geometry pass slides around the body's
    rounded left end (bottom-left -> left -> top-left) so the tail stays welded
    to the edge instead of detaching from a fixed corner. */
 .goo-tail {
@@ -342,7 +248,6 @@ p {
   /* Counter the filter canvas padding so the tail's local coordinates still
      line up with the body and the JS-provided joint remains unchanged. */
   inset: 48px;
-  transform: rotate(var(--tail-angle, 0deg));
   transform-origin: var(--joint-x, 14px) var(--joint-y, calc(100% - 4px));
 }
 
@@ -381,9 +286,6 @@ p {
   opacity: 0;
   transform: scale(0.96);
   transform-origin: left center;
-  transition:
-    opacity 150ms ease,
-    transform 180ms cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
 .hire-label {
