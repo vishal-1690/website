@@ -114,6 +114,302 @@ p {
   object-fit: cover;
 }
 
+/* --- Hire bubble ------------------------------------------------------------
+   A white thought bubble anchored to the profile picture: a rounded body with
+   three trailing circles that shrink toward the avatar. All four shapes share
+   the #goo SVG filter in HireBubble.tsx — blur their alpha together, then
+   threshold it back to a hard edge, so the tail reads as one liquid body that
+   stretches and fuses as the circles rise.
+
+   The filtered layer holds only shapes. Text lives in a sibling above it,
+   because alpha thresholding destroys antialiased glyph edges. */
+/* Fixed, with its position written every frame by the rAF loop in
+   HireBubble.tsx — `top`/`left` stay at 0 and the transform does the work, so
+   the follow is composited rather than triggering layout. */
+.hire-root {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 20;
+  display: grid;
+  width: max-content;
+  /* While collapsed the shapes are scale(0) but still occupy a box, which
+     would otherwise intercept clicks meant for the avatar. */
+  pointer-events: none;
+}
+
+.hire-root[data-phase="in"] .hire-content {
+  pointer-events: auto;
+}
+
+/* Host for the <defs>. Deliberately 1x1 and clipped rather than 0x0: WebKit
+   fails to resolve a filter referenced from a zero-sized <svg>, which made the
+   whole goo layer render empty on iOS. `visibility: hidden` would break it the
+   same way, so it is hidden by size and clip only. */
+.hire-defs {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  pointer-events: none;
+}
+
+/* Both children occupy the same grid cell so the text overlays the shapes.
+   Explicit z-index: the content's fallback background must sit *under* the goo
+   layer, so the goo's rounded silhouette wins whenever the filter works. */
+.goo-layer,
+.hire-content {
+  grid-area: 1 / 1;
+}
+
+.goo-layer {
+  z-index: 1;
+}
+
+.hire-content {
+  z-index: 2;
+}
+
+/* `filter` is set inline by the component, since the id is per-instance. The
+   drop-shadow is chained after the goo filter, so it traces the merged
+   silhouette — a box-shadow on the content would outline a rectangle instead. */
+.goo-layer {
+  position: relative;
+  /* iOS Safari intermittently fails to repaint a filtered subtree whose
+     children are animating transforms. Promoting the layer forces it onto the
+     compositor, which fixes the blank-bubble case on iOS. */
+  transform: translateZ(0);
+  will-change: filter;
+}
+
+.goo-body,
+.goo-drop {
+  position: absolute;
+  display: block;
+  background: #fff;
+}
+
+/* Sized from the content above it, so the body always fits the label. The pill
+   radius is half the height, so it stays a true capsule while the goo filter
+   rounds whatever the scale leaves behind. */
+.goo-body {
+  inset: 0;
+  border-radius: 999px;
+}
+
+/* The thought-bubble tail: three circles below the body, shrinking and
+   stepping left toward the avatar. Each overlaps its neighbour enough for the
+   goo filter to keep a neck of white attached between them.
+
+   Everything starts collapsed. The sequence below pops them in smallest-first
+   (3 -> 2 -> 1), then inflates the body — a thought forming rather than a
+   panel sliding in. Nothing loops; the motion happens once. */
+.goo-drop {
+  border-radius: 50%;
+  transform-origin: center;
+  transform: scale(0);
+  transition: transform 340ms cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+/* The body retracts toward its left edge and ends fully closed.
+
+   `scale(0)` rather than `scaleX(0.14)`: the sliver left the bubble's white
+   body permanently on screen after collapse. Scaling both axes squashed the
+   pill into a rectangle mid-animation, so the width leads and the height
+   follows — see the keyframes, which run instead of a plain transition. */
+.goo-body {
+  transform-origin: left center;
+  transform: scale(0);
+}
+
+/* Width closes first, height only at the tail end, so it never passes through
+   a rectangular shape. */
+@keyframes goo-body-out {
+  0% {
+    transform: scaleX(1) scaleY(1);
+  }
+  70% {
+    transform: scaleX(0.16) scaleY(1);
+  }
+  100% {
+    transform: scaleX(0) scaleY(0);
+  }
+}
+
+@keyframes goo-body-in {
+  0% {
+    transform: scaleX(0) scaleY(0);
+  }
+  35% {
+    transform: scaleX(0.16) scaleY(1);
+  }
+  100% {
+    transform: scaleX(1) scaleY(1);
+  }
+}
+
+/* --- Entry: smallest circle first, then up the chain, then the body --------*/
+.hire-root[data-phase="in"] .goo-drop-3 {
+  transform: scale(1);
+  transition-delay: 0ms;
+}
+
+.hire-root[data-phase="in"] .goo-drop-2 {
+  transform: scale(1);
+  transition-delay: 110ms;
+}
+
+.hire-root[data-phase="in"] .goo-drop-1 {
+  transform: scale(1);
+  transition-delay: 220ms;
+}
+
+.hire-root[data-phase="in"] .goo-body {
+  animation: goo-body-in 380ms cubic-bezier(0.34, 1.56, 0.64, 1) 330ms both;
+}
+
+/* Text waits for the body to finish inflating, so it reads as filling a bubble
+   that already exists. */
+.hire-root[data-phase="in"] .hire-content {
+  opacity: 1;
+  transition-delay: 560ms;
+}
+
+/* --- Exit: the same sequence reversed -------------------------------------*/
+.hire-root[data-phase="out"] .hire-content {
+  opacity: 0;
+  transition-delay: 0ms;
+  transition-duration: 120ms;
+}
+
+.hire-root[data-phase="out"] .goo-body {
+  animation: goo-body-out 280ms cubic-bezier(0.4, 0, 1, 1) 100ms both;
+}
+
+.hire-root[data-phase="out"] .goo-drop-1 {
+  transform: scale(0);
+  transition-delay: 220ms;
+  transition-duration: 220ms;
+}
+
+.hire-root[data-phase="out"] .goo-drop-2 {
+  transform: scale(0);
+  transition-delay: 300ms;
+  transition-duration: 220ms;
+}
+
+.hire-root[data-phase="out"] .goo-drop-3 {
+  transform: scale(0);
+  transition-delay: 380ms;
+  transition-duration: 220ms;
+}
+
+/* The tail pivots from the body's lower-left corner. The rAF loop writes
+   --tail-angle so the circles keep pointing back at the avatar as it scrolls
+   away, rather than trailing off at a fixed angle. */
+/* Pivots from --joint-x/--joint-y, which the rAF loop slides around the body's
+   rounded left end (bottom-left -> left -> top-left) so the tail stays welded
+   to the edge instead of detaching from a fixed corner. */
+.goo-tail {
+  position: absolute;
+  inset: 0;
+  transform: rotate(var(--tail-angle, 0deg));
+  transform-origin: var(--joint-x, 14px) var(--joint-y, calc(100% - 4px));
+}
+
+/* Tail circles hang from the joint, each smaller and further out, so the chain
+   starts wherever the joint currently sits on the rounded edge. Offsets are
+   centred on the joint via the negative half-width margins. */
+.goo-drop {
+  left: var(--joint-x, 14px);
+  top: var(--joint-y, calc(100% - 4px));
+}
+
+.goo-drop-1 {
+  width: 16px;
+  height: 16px;
+  margin: -2px 0 0 -8px;
+}
+
+.goo-drop-2 {
+  width: 11px;
+  height: 11px;
+  margin: 15px 0 0 -11px;
+}
+
+.goo-drop-3 {
+  width: 7px;
+  height: 7px;
+  margin: 29px 0 0 -13px;
+}
+
+.hire-content {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.6rem 0.7rem 0.6rem 0.9rem;
+  opacity: 0;
+  transition: opacity 260ms ease;
+}
+
+/* Safety net: if the SVG filter fails to resolve — a recurring WebKit weakness
+   — the goo layer paints nothing and the label would sit invisible on the dark
+   page. This gives the text its own pill behind it, so the bubble degrades to a
+   plain capsule rather than disappearing. z-index -1 keeps it under the goo
+   layer, so it is never visible when the filter works. */
+.hire-content::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: 999px;
+  background: #fff;
+  /* No background or shadow here. The goo layer paints the whole shape; giving
+     this box its own shadow outlined it as a separate rounded rectangle
+     floating over the bubble, which broke the illusion of one surface. */
+}
+
+.hire-label {
+  font-size: var(--text-2xs);
+  line-height: 1;
+  /* Dark text, since the bubble itself is white. */
+  color: #16161a;
+  white-space: nowrap;
+}
+
+.hire-close {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 17px;
+  height: 17px;
+  border-radius: 50%;
+  /* Muted against the white bubble, not the dark page. */
+  color: #8b8b95;
+  cursor: pointer;
+  transition:
+    color 160ms ease,
+    background-color 160ms ease;
+}
+
+@media (hover: hover) {
+  .hire-close:hover {
+    color: #16161a;
+    background: rgba(0, 0, 0, 0.07);
+  }
+}
+
+/* Shrink-wraps the avatar, so hover only fires over the picture itself rather
+   than the full width of whatever contains it. */
+.avatar-wrap {
+  position: relative;
+  width: fit-content;
+  cursor: pointer;
+}
+
+
 /* --- Header layout --------------------------------------------------------*/
 .header-grid {
   display: block;

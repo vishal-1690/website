@@ -1,4 +1,5 @@
 import Avatar from "./Avatar";
+import HireBubble from "./HireBubble";
 import SegmentedNav from "./SegmentedNav";
 import { site } from "@/content/site";
 
@@ -20,12 +21,16 @@ export default function Profile() {
   return (
     <header className="header-grid">
       <div className="avatar-float hidden md:block">
-        <Avatar {...avatar} size={144} />
+        <HireBubble>
+          <Avatar {...avatar} size={144} />
+        </HireBubble>
       </div>
 
       <div className="min-w-0">
-        <div className="mb-6 md:hidden">
-          <Avatar {...avatar} size={132} />
+        <div className="mb-6 w-fit md:hidden">
+          <HireBubble>
+            <Avatar {...avatar} size={132} />
+          </HireBubble>
         </div>
 
         <div className="flex items-center justify-between gap-4">

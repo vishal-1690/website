@@ -28,6 +28,10 @@ export interface Profile {
   initials: string;
   /** Rendered as one muted line above the tabs. Keep it short. */
   skills: string[];
+  /** When false the floating availability bubble is not rendered. */
+  available: boolean;
+  /** Bubble copy. Keep it to a few words — it sits on one line. */
+  availableLabel: string;
   /**
    * Read from the RESUME_PUBLIC_LINK env var. When unset the resume button is
    * not rendered at all. Read at build time — this is a static site, so
@@ -120,6 +124,8 @@ export const site: SiteContent = {
       "Node",
       "Postgres",
     ],
+    available: true,
+    availableLabel: "Open to work",
     resumeUrl: process.env.RESUME_PUBLIC_LINK,
     emailUser: process.env.CONTACT_EMAIL_USER,
     emailDomain: process.env.CONTACT_EMAIL_DOMAIN,
