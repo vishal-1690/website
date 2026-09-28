@@ -29,7 +29,7 @@ const PARKED = { top: 24, left: 24 };
 /** Retarget duration for live position and tail movement. */
 const FOLLOW_DURATION_MS = 220;
 /** Clear space between the filtered tail and the drawable viewport edge. */
-const TAIL_VIEWPORT_GUTTER = 8;
+const TAIL_VIEWPORT_GUTTER = 0;
 
 /** Circle centres/radii in the tail's unrotated coordinate system. */
 const TAIL_DROPS = [
