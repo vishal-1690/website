@@ -175,7 +175,12 @@ p {
    drop-shadow is chained after the goo filter, so it traces the merged
    silhouette — a box-shadow on the content would outline a rectangle instead. */
 .goo-layer {
-  position: relative;
+  position: absolute;
+  /* Give WebKit a real layout box that contains the off-body tail and blur.
+     The SVG filter region alone is not enough on iOS: once the transform
+     animation is promoted/settled, Safari can rasterize the filtered HTML
+     subtree to the element's border box and clip everything outside it. */
+  inset: -48px;
   /* iOS Safari intermittently fails to repaint a filtered subtree whose
      children are animating transforms. Promoting the layer forces it onto the
      compositor, which fixes the blank-bubble case on iOS. */
@@ -187,6 +192,9 @@ p {
 .goo-drop {
   position: absolute;
   display: block;
+}
+
+.goo-drop {
   background: #fff;
 }
 
@@ -194,8 +202,12 @@ p {
    radius is half the height, so it stays a true capsule while the goo filter
    rounds whatever the scale leaves behind. */
 .goo-body {
-  inset: 0;
-  border-radius: 999px;
+  top: 48px;
+  left: 48px;
+  width: calc(100% - 96px);
+  height: calc(100% - 96px);
+  fill: #fff;
+  overflow: visible;
 }
 
 /* The thought-bubble tail: three circles below the body, shrinking and
@@ -212,28 +224,37 @@ p {
   transition: transform 340ms cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
-/* The body retracts toward its left edge and ends fully closed.
-
-   `scale(0)` rather than `scaleX(0.14)`: the sliver left the bubble's white
-   body permanently on screen after collapse. Scaling both axes squashed the
-   pill into a rectangle mid-animation, so the width leads and the height
-   follows — see the keyframes, which run instead of a plain transition. */
+/* The SVG body owns the silhouette and animation. It first resolves to a
+   circle at the tail joint, then stretches into the pill; exit reverses that
+   sequence and finally scales the circle away. The content never participates
+   in the body's geometry. */
 .goo-body {
   transform-origin: left center;
   transform: scale(0);
 }
 
-/* Width closes first, height only at the tail end, so it never passes through
-   a rectangular shape. */
 @keyframes goo-body-out {
   0% {
-    transform: scaleX(1) scaleY(1);
+    transform: scale(1);
   }
-  70% {
-    transform: scaleX(0.16) scaleY(1);
+  65% {
+    /* The rect has finished morphing into a circle before scaling begins. */
+    transform: scale(1);
   }
   100% {
-    transform: scaleX(0) scaleY(0);
+    transform: scale(0);
+  }
+}
+
+/* Shrink the SVG geometry itself rather than scaleX-ing the capsule. This
+   preserves its 18.5px circular end caps, producing a real 37x37 circle. */
+@keyframes goo-body-shape-out {
+  0% {
+    width: 140px;
+  }
+  65%,
+  100% {
+    width: 37px;
   }
 }
 
@@ -241,8 +262,8 @@ p {
   0% {
     transform: scaleX(0) scaleY(0);
   }
-  35% {
-    transform: scaleX(0.16) scaleY(1);
+  38% {
+    transform: scaleX(0.263) scaleY(1);
   }
   100% {
     transform: scaleX(1) scaleY(1);
@@ -266,42 +287,47 @@ p {
 }
 
 .hire-root[data-phase="in"] .goo-body {
-  animation: goo-body-in 380ms cubic-bezier(0.34, 1.56, 0.64, 1) 330ms both;
+  animation: goo-body-in 420ms cubic-bezier(0.34, 1.56, 0.64, 1) 330ms both;
 }
 
-/* Text waits for the body to finish inflating, so it reads as filling a bubble
-   that already exists. */
+/* Content is an independent pop layered over the already-grown SVG body. */
 .hire-root[data-phase="in"] .hire-content {
   opacity: 1;
-  transition-delay: 560ms;
+  transform: scale(1);
+  transition-delay: 620ms;
 }
 
 /* --- Exit: the same sequence reversed -------------------------------------*/
 .hire-root[data-phase="out"] .hire-content {
   opacity: 0;
+  transform: scale(0.96);
   transition-delay: 0ms;
   transition-duration: 120ms;
 }
 
 .hire-root[data-phase="out"] .goo-body {
-  animation: goo-body-out 280ms cubic-bezier(0.4, 0, 1, 1) 100ms both;
+  animation: goo-body-out 360ms cubic-bezier(0.4, 0, 1, 1) 100ms both;
+}
+
+.hire-root[data-phase="out"] .goo-body-shape {
+  animation: goo-body-shape-out 360ms cubic-bezier(0.4, 0, 1, 1) 100ms both;
 }
 
 .hire-root[data-phase="out"] .goo-drop-1 {
   transform: scale(0);
-  transition-delay: 220ms;
+  transition-delay: 460ms;
   transition-duration: 220ms;
 }
 
 .hire-root[data-phase="out"] .goo-drop-2 {
   transform: scale(0);
-  transition-delay: 300ms;
+  transition-delay: 530ms;
   transition-duration: 220ms;
 }
 
 .hire-root[data-phase="out"] .goo-drop-3 {
   transform: scale(0);
-  transition-delay: 380ms;
+  transition-delay: 600ms;
   transition-duration: 220ms;
 }
 
@@ -313,7 +339,9 @@ p {
    to the edge instead of detaching from a fixed corner. */
 .goo-tail {
   position: absolute;
-  inset: 0;
+  /* Counter the filter canvas padding so the tail's local coordinates still
+     line up with the body and the JS-provided joint remains unchanged. */
+  inset: 48px;
   transform: rotate(var(--tail-angle, 0deg));
   transform-origin: var(--joint-x, 14px) var(--joint-y, calc(100% - 4px));
 }
@@ -351,24 +379,11 @@ p {
   gap: 0.5rem;
   padding: 0.6rem 0.7rem 0.6rem 0.9rem;
   opacity: 0;
-  transition: opacity 260ms ease;
-}
-
-/* Safety net: if the SVG filter fails to resolve — a recurring WebKit weakness
-   — the goo layer paints nothing and the label would sit invisible on the dark
-   page. This gives the text its own pill behind it, so the bubble degrades to a
-   plain capsule rather than disappearing. z-index -1 keeps it under the goo
-   layer, so it is never visible when the filter works. */
-.hire-content::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  z-index: -1;
-  border-radius: 999px;
-  background: #fff;
-  /* No background or shadow here. The goo layer paints the whole shape; giving
-     this box its own shadow outlined it as a separate rounded rectangle
-     floating over the bubble, which broke the illusion of one surface. */
+  transform: scale(0.96);
+  transform-origin: left center;
+  transition:
+    opacity 150ms ease,
+    transform 180ms cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
 .hire-label {

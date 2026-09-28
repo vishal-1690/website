@@ -16,13 +16,15 @@ import { site } from "@/content/site";
  * Entry runs as a sequence, smallest circle first: 3 -> 2 -> 1 -> body inflates
  * -> text fades in. Dismissing plays the same sequence in reverse.
  *
- * It only closes on an explicit dismiss — the X, or tapping an open bubble.
- * Moving the cursor away deliberately does nothing, so it never vanishes from
- * under you while you are reading it.
+ * It only closes on an explicit dismiss via the X. Moving the cursor away
+ * deliberately does nothing, so it never vanishes from under you while you
+ * are reading it.
  */
 
 /** Matches the longest exit delay + duration in globals.css. */
-const EXIT_MS = 620;
+const EXIT_MS = 840;
+/** How long the pointer must remain over the avatar before the bubble opens. */
+const HOVER_DELAY_MS = 300;
 /** Where the bubble settles once the avatar is gone, in viewport px. */
 const PARKED = { top: 24, left: 24 };
 /** Per-frame easing toward the target. Lower = laggier, springier follow. */
@@ -39,6 +41,7 @@ export default function HireBubble({
   const wrapRef = useRef<HTMLDivElement>(null);
   const rootRef = useRef<HTMLDivElement>(null);
   const exitTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const hoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const { profile } = site;
   // Desktop and mobile each render an instance, so the filter id must be
   // unique — duplicate ids would make one instance reference the other's.
@@ -54,6 +57,7 @@ export default function HireBubble({
   useEffect(
     () => () => {
       if (exitTimer.current) clearTimeout(exitTimer.current);
+      if (hoverTimer.current) clearTimeout(hoverTimer.current);
     },
     [],
   );
@@ -215,6 +219,10 @@ export default function HireBubble({
   }, []);
 
   function show() {
+    if (hoverTimer.current) {
+      clearTimeout(hoverTimer.current);
+      hoverTimer.current = null;
+    }
     // Cancel a pending unmount so re-entry mid-exit picks straight back up.
     if (exitTimer.current) {
       clearTimeout(exitTimer.current);
@@ -223,7 +231,22 @@ export default function HireBubble({
     setPhase("in");
   }
 
-  /** Only ever called explicitly — via the X, or by tapping an open bubble. */
+  function scheduleShow() {
+    if (phase === "in" || hoverTimer.current) return;
+
+    hoverTimer.current = setTimeout(() => {
+      hoverTimer.current = null;
+      show();
+    }, HOVER_DELAY_MS);
+  }
+
+  function cancelScheduledShow() {
+    if (!hoverTimer.current) return;
+    clearTimeout(hoverTimer.current);
+    hoverTimer.current = null;
+  }
+
+  /** Only ever called explicitly via the X. */
   function hide() {
     setPhase("out");
     exitTimer.current = setTimeout(() => setPhase("idle"), EXIT_MS);
@@ -235,9 +258,8 @@ export default function HireBubble({
     <div
       ref={wrapRef}
       className="avatar-wrap"
-      onMouseEnter={show}
-      // Touch has no hover, so a tap toggles instead.
-      onClick={() => (phase === "in" ? hide() : show())}
+      onMouseEnter={scheduleShow}
+      onMouseLeave={cancelScheduledShow}
     >
       {children}
 
@@ -287,7 +309,20 @@ export default function HireBubble({
             filter: `url(#${filterId}) drop-shadow(0 6px 16px rgba(0, 0, 0, 0.45))`,
           }}
         >
-          <span className="goo-body" />
+          <svg
+            className="goo-body"
+            viewBox="0 0 140 37"
+            preserveAspectRatio="none"
+            aria-hidden="true"
+          >
+            <rect
+              className="goo-body-shape"
+              width="140"
+              height="37"
+              rx="18.5"
+              ry="18.5"
+            />
+          </svg>
           <span className="goo-tail">
             <span className="goo-drop goo-drop-1" />
             <span className="goo-drop goo-drop-2" />
@@ -299,11 +334,7 @@ export default function HireBubble({
           <span className="hire-label">{profile.availableLabel}</span>
           <button
             type="button"
-            onClick={(e) => {
-              // Otherwise the wrapper's onClick immediately re-opens it.
-              e.stopPropagation();
-              hide();
-            }}
+            onClick={hide}
             aria-label="Dismiss"
             className="hire-close"
             tabIndex={phase === "in" ? 0 : -1}
