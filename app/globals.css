@@ -2,10 +2,6 @@
 
 :root {
   color-scheme: dark;
-  /* Read by the thought-bubble geometry pass. This remains 0 on browsers that
-     already inset the layout viewport and becomes the hardware safe area when
-     an iOS web view exposes edge-to-edge content. */
-  --safe-area-top: env(safe-area-inset-top, 0px);
 
   /* surfaces */
   --bg: #0a0a0b;

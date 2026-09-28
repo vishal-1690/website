@@ -29,7 +29,7 @@ const PARKED = { top: 24, left: 24 };
 /** Retarget duration for live position and tail movement. */
 const FOLLOW_DURATION_MS = 220;
 /** Clear space between the filtered tail and the drawable viewport edge. */
-const TAIL_VIEWPORT_GUTTER = 16;
+const TAIL_VIEWPORT_GUTTER = 8;
 
 /** Circle centres/radii in the tail's unrotated coordinate system. */
 const TAIL_DROPS = [
@@ -252,13 +252,6 @@ export default function HireBubble({
         };
       };
 
-      const safeAreaTop =
-        Number.parseFloat(
-          getComputedStyle(document.documentElement).getPropertyValue(
-            "--safe-area-top",
-          ),
-        ) || 0;
-
       let targetY = baseTargetY;
       let geometry = geometryAt(targetY);
 
@@ -280,7 +273,7 @@ export default function HireBubble({
         );
         targetY = Math.max(
           baseTargetY,
-          safeAreaTop + TAIL_VIEWPORT_GUTTER - tailTop,
+          TAIL_VIEWPORT_GUTTER - tailTop,
         );
         geometry = geometryAt(targetY);
       }
