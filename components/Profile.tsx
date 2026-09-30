@@ -7,8 +7,9 @@ import { site } from "@/content/site";
  * The persistent header. Rendered by layout.tsx (outside template.tsx) so it
  * stays still while only the content below it blurs in on navigation.
  *
- * The avatar floats in the left margin on desktop and stacks above the name on
- * mobile — see `.header-grid` in globals.css.
+ * The avatar floats in the left margin only where that margin is wide enough to
+ * hold it (the `avatar` breakpoint, 1320px), and stacks above the name anywhere
+ * narrower — phones and tablets alike. See `.header-grid` in globals.css.
  */
 export default function Profile() {
   const { profile } = site;
@@ -20,14 +21,14 @@ export default function Profile() {
 
   return (
     <header className="header-grid">
-      <div className="avatar-float hidden md:block">
+      <div className="avatar-float hidden avatar:block">
         <HireBubble>
           <Avatar {...avatar} size={144} />
         </HireBubble>
       </div>
 
       <div className="min-w-0">
-        <div className="mb-6 w-fit md:hidden">
+        <div className="mb-6 w-fit avatar:hidden">
           <HireBubble>
             <Avatar {...avatar} size={132} />
           </HireBubble>

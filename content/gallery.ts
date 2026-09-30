@@ -1,22 +1,26 @@
 /**
  * Image galleries for work rows, keyed by the slug in `Experience.gallery`.
  *
- * PLACEHOLDER: these resolve to placecats.com so the interaction can be built
- * before the real screenshots exist. When the media pipeline lands
- * (docs/work-image-stack-carousel.md §3) this file is replaced by a lookup into
- * the generated manifest, and `thumbSrc` / `src` become the real thumb and
- * full-size variants. Callers only depend on the `GalleryImage` shape.
+ * The data is generated from media/work/<slug>/ by
+ * scripts/build-work-media.mjs (runs on predev/prebuild); see
+ * docs/work-image-stack-carousel.md.
  */
+
+import manifest from "./work-media.generated.json";
 
 export interface GalleryImage {
   id: string;
   alt: string;
-  /** Natural size of the full image. Only the aspect ratio matters for layout. */
+  /** "video" plays in the carousel; "image" may still be an animated image. */
+  kind: "image" | "video";
+  /** Video or animated image. Only the active slide ever plays. */
+  animated: boolean;
+  /** Natural size of the full asset. Only the aspect ratio matters for layout. */
   width: number;
   height: number;
-  /** Static, small. What the pile shows and what the carousel opens with. */
+  /** Static first frame, small. The pile shows it and the slide starts on it. */
   thumbSrc: string;
-  /** Full-size, possibly animated. Unused until the crossfade step. */
+  /** The full asset: video file, animated image, or large still. */
   src: string;
 }
 
@@ -31,23 +35,11 @@ export interface PilePose {
   rotate: number;
   /** Stacking order in the pile; the overlay copies it so z-order matches in flight. */
   z: number;
+  /** False for cards tucked out of sight beneath the visible pile. */
+  visible: boolean;
 }
 
-const cat = (id: string, width: number, height: number, alt: string): GalleryImage => {
-  const url = `https://placecats.com/${width}/${height}`;
-  return { id, alt, width, height, thumbSrc: url, src: url };
-};
-
-const galleries: Record<string, GalleryImage[]> = {
-  // A deliberately awkward mix: landscape, tall phone, square, panoramic, portrait.
-  flipai: [
-    cat("wide", 1200, 750, "Placeholder cat, landscape"),
-    cat("phone", 640, 1136, "Placeholder cat, tall phone screenshot"),
-    cat("square", 1000, 1000, "Placeholder cat, square"),
-    cat("panorama", 1440, 640, "Placeholder cat, panoramic"),
-    cat("portrait", 900, 1200, "Placeholder cat, portrait"),
-  ],
-};
+const galleries = manifest as Record<string, GalleryImage[]>;
 
 export function getGallery(slug: string): GalleryImage[] {
   return galleries[slug] ?? [];

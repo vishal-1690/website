@@ -53,8 +53,8 @@ export default function WorkRow({ item }: { item: Experience }) {
         {images.length > 0 && (
           <WorkGallery
             images={images}
-            label={`View ${images.length} screenshots from ${item.company}`}
-            caption={`${images.length} screenshots`}
+            label={`View ${images.length} interface demos from ${item.company}`}
+            caption={`${images.length} demos`}
           />
         )}
       </div>

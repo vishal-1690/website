@@ -22,6 +22,12 @@ import type { GalleryOverlayProps } from "./GalleryOverlay";
 /** Longest a card may be in each dimension, before aspect is applied. */
 const CARD_BOX = { width: 108, height: 78 };
 const PRESS_SCALE = 0.94;
+/**
+ * Cards beyond this rank share the last visible slot and are hidden, so a long
+ * gallery still reads as a small pile and the hover fan stays inside the row.
+ * They still exist, so they still fly out and back with everything else.
+ */
+const MAX_VISIBLE = 4;
 
 const settleEase = cubicBezier(0.16, 1, 0.3, 1);
 const overshootEase = cubicBezier(0.34, 1.56, 0.64, 1);
@@ -43,7 +49,8 @@ const mod = (a: number, n: number) => ((a % n) + n) % n;
  *
  * Rank 0 is nearly straight; the rest peek out alternately.
  */
-function restPose(rank: number): CardPose {
+function restPose(rawRank: number): CardPose {
+  const rank = Math.min(rawRank, MAX_VISIBLE - 1);
   const side = rank % 2 === 1 ? 1 : -1;
   return {
     x: rank === 0 ? 0 : side * (2 + rank * 2.5),
@@ -56,7 +63,8 @@ function restPose(rank: number): CardPose {
  * Hand-of-cards fan with the top card in the middle and the rest alternating
  * to its right and left: ranks 0,1,2,3,4 -> slots 0,+1,-1,+2,-2.
  */
-function hoverPose(rank: number): CardPose {
+function hoverPose(rawRank: number): CardPose {
+  const rank = Math.min(rawRank, MAX_VISIBLE - 1);
   const slot = rank === 0 ? 0 : rank % 2 === 1 ? (rank + 1) / 2 : -rank / 2;
   return { x: slot * 22, y: Math.abs(slot) * 4 - 4, rotate: slot * 7 };
 }
@@ -115,8 +123,11 @@ export default function WorkGallery({
     const n = images.length;
     cards().forEach((card, i) => {
       const rank = mod(i - top.current, n);
+      // Stashed cards are invisible, but they still count towards the page's
+      // scroll width, so they must not swing out with the fan.
+      const fanned = mode === "hover" && rank < MAX_VISIBLE;
       animate(card, {
-        ...toParams(mode === "hover" ? hoverPose(rank) : restPose(rank)),
+        ...toParams(fanned ? hoverPose(rank) : restPose(rank)),
         duration: mode === "hover" ? 420 : 340,
         ease: settleEase,
       });
@@ -188,6 +199,7 @@ export default function WorkGallery({
         const rank = mod(i - top.current, n);
         utils.set(card, toParams(restPose(rank)));
         card.style.zIndex = String(n - rank);
+        card.style.opacity = rank < MAX_VISIBLE ? "1" : "0";
       });
     }
 
@@ -206,6 +218,7 @@ export default function WorkGallery({
         width: card.offsetWidth * scale,
         rotate: (Math.atan2(m.b, m.a) * 180) / Math.PI,
         z: Number(card.style.zIndex) || 0,
+        visible: card.style.opacity !== "0",
       };
     });
   }, []);
@@ -284,6 +297,7 @@ export default function WorkGallery({
                   marginLeft: -width / 2,
                   marginTop: -height / 2,
                   zIndex: images.length - i,
+                  opacity: i < MAX_VISIBLE ? 1 : 0,
                   transform: `translate(${rest.x}px, ${rest.y}px) rotate(${rest.rotate}deg)`,
                 }}
               >

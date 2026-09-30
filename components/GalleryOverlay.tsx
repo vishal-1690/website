@@ -35,8 +35,12 @@ const OPEN_EASE = cubicBezier(0.16, 1, 0.3, 1);
 // Geometry that has to morph between the pile card and the slide. The pile's
 // values are real px on a small card; they are divided by the flight scale so
 // they look identical on the first frame. Keep in sync with .pile-card.
-const SLIDE = { radius: 14, frame: 6, imageRadius: 8 };
-const PILE = { radius: 5, frame: 3, imageRadius: 2 };
+/** Images either side of the centred one that also fly out of / into the pile. */
+const FLY_RADIUS = 2;
+
+// The frame matches the company logo tiles: a 2px border in --border-tile.
+const SLIDE = { radius: 14, frame: 3, imageRadius: 11 };
+const PILE = { radius: 5, frame: 2, imageRadius: 3 };
 
 const clamp = (v: number, lo: number, hi: number) =>
   Math.min(hi, Math.max(lo, v));
@@ -155,9 +159,106 @@ export default function GalleryOverlay({
     /** Signed index distance from `p` to slide i, wrapped to [-N/2, N/2). */
     const idxDist = (i: number) => mod(i - state.p + N / 2, N) - N / 2;
 
+    /** Cyclic distance between two image indices. */
+    const lapDist = (a: number, b: number) => {
+      const d = mod(a - b, N);
+      return Math.min(d, N - d);
+    };
+
+    /**
+     * Which slides travel between pile and carousel: the cards visible in the
+     * pile (so nothing vanishes from it on click) plus the centred image and
+     * FLY_RADIUS either side, which are the ones on screen. A long gallery no
+     * longer means a long, heavy choreography.
+     */
+    const flies = (i: number, pile: PilePose[], centre: number) =>
+      pile[i].visible || lapDist(i, centre) <= FLY_RADIUS;
+
+    /* --- Full-size media --------------------------------------------------- */
+
+    // Each slide starts as its thumb (the same picture as the pile card). The
+    // full asset is stacked over it and faded in once it can show a frame, so
+    // there is never a swap. Videos and animated images are mounted for the
+    // active slide only; stills are kept for the active slide and its
+    // neighbours.
+    type Full = HTMLImageElement | HTMLVideoElement;
+    const full: (Full | null)[] = images.map(() => null);
+    let lastActive = -1;
+
+    const reveal = (el: Full) => {
+      if (phase !== "closing") el.style.opacity = "1";
+    };
+
+    const mountFull = (i: number): Full => {
+      const existing = full[i];
+      if (existing) return existing;
+      const image = images[i];
+      let el: Full;
+      if (image.kind === "video") {
+        const video = document.createElement("video");
+        video.muted = true;
+        video.loop = true;
+        video.playsInline = true;
+        video.preload = "auto";
+        video.src = image.src;
+        // "playing", not "loadeddata": there must be a frame on screen.
+        video.addEventListener("playing", () => reveal(video), { once: true });
+        el = video;
+      } else {
+        const img = new Image();
+        img.decoding = "async";
+        img.src = image.src;
+        img.decode().then(() => reveal(img), () => {});
+        el = img;
+      }
+      el.className = "gallery-full";
+      el.setAttribute("aria-hidden", "true");
+      (el as HTMLElement).draggable = false;
+      flips[i].appendChild(el);
+      full[i] = el;
+      return el;
+    };
+
+    const disposeFull = (i: number) => {
+      const el = full[i];
+      if (!el) return;
+      if (el instanceof HTMLVideoElement) {
+        el.pause();
+        el.removeAttribute("src");
+        el.load();
+      }
+      el.remove();
+      full[i] = null;
+    };
+
+    const syncMedia = () => {
+      if (phase !== "open") return;
+      const active = mod(Math.round(state.p), N);
+      lastActive = active;
+      for (let i = 0; i < N; i++) {
+        const image = images[i];
+        const near = lapDist(i, active);
+        if (near === 0) {
+          const el = mountFull(i);
+          if (el instanceof HTMLVideoElement) el.play().catch(() => {});
+        } else if (image.animated) {
+          // Can't pause an animated image, so it's dropped; videos are kept
+          // one step away, paused, and dropped beyond that.
+          const el = full[i];
+          if (el instanceof HTMLVideoElement && near === 1) el.pause();
+          else disposeFull(i);
+        } else if (near === 1) {
+          mountFull(i);
+        }
+      }
+    };
+
     /* --- Rendering --------------------------------------------------------- */
 
     const render = () => {
+      if (phase === "open" && mod(Math.round(state.p), N) !== lastActive) {
+        syncMedia();
+      }
       const blur = phone ? 6 : 10;
       for (let i = 0; i < N; i++) {
         const el = slides[i];
@@ -223,11 +324,6 @@ export default function GalleryOverlay({
       });
     };
 
-    /** Cyclic distance between two image indices. */
-    const lapDist = (a: number, b: number) => {
-      const d = mod(a - b, N);
-      return Math.min(d, N - d);
-    };
 
     /* --- Navigation -------------------------------------------------------- */
 
@@ -253,6 +349,12 @@ export default function GalleryOverlay({
     const close = (dir: number) => {
       if (phase === "closing") return;
       phase = "closing";
+      // Back to the thumb first: that is the picture the pile shows.
+      full.forEach((el) => {
+        if (!el) return;
+        el.style.opacity = "0";
+        if (el instanceof HTMLVideoElement) el.pause();
+      });
       openTl?.pause();
       pAnim?.pause();
       dismissAnim?.pause();
@@ -269,14 +371,25 @@ export default function GalleryOverlay({
       // momentum into the return. Unwinding it back to 0 lands on the pile.
       closeTl = createTimeline({
         defaults: { ease: OPEN_EASE },
-        onComplete: () => onClosed(),
+        onComplete: () => {
+          // Closed by button, Esc or swipe: drop the history entry we pushed.
+          // (Closed by the browser's back: it is already gone.)
+          if (window.history.state?.gallery) window.history.back();
+          onClosed();
+        },
       });
       for (let i = 0; i < N; i++) {
-        closeTl.add(
-          flips[i],
-          { ...flipFor(i, pile), duration: dur(520) },
-          dur(lapDist(i, start) * 40),
-        );
+        const at = dur(lapDist(i, start) * 40);
+        if (!flies(i, pile, start)) {
+          // Nowhere to go: too far from the action to be seen returning.
+          closeTl.add(slides[i], { opacity: 0, duration: dur(200) }, 0);
+          continue;
+        }
+        closeTl.add(flips[i], { ...flipFor(i, pile), duration: dur(520) }, at);
+        // Its pile slot is hidden, so it dissolves into the pile on the way.
+        if (!pile[i].visible) {
+          closeTl.add(slides[i], { opacity: 0, duration: dur(260) }, at + dur(260));
+        }
       }
       closeTl
         .add(
@@ -421,6 +534,17 @@ export default function GalleryOverlay({
       render();
     };
 
+    // iOS's edge-swipe back can't be cancelled from the page (it's a system
+    // gesture, not a touch event), and Android's back button would leave the
+    // page too. So the gallery gets its own history entry: back closes the
+    // gallery, and the page underneath stays where it is.
+    const onPopState = () => {
+      if (phase === "closing") return;
+      close(0);
+    };
+    if (!window.history.state?.gallery) {
+      window.history.pushState({ ...window.history.state, gallery: true }, "");
+    }
     /* --- Open -------------------------------------------------------------- */
 
     const previousOverflow = document.documentElement.style.overflow;
@@ -433,23 +557,37 @@ export default function GalleryOverlay({
     // Before the first paint: put every slide exactly on its pile card.
     const pile = getPile(false, startIndex);
     applyPileOrder(pile);
-    for (let i = 0; i < N; i++) utils.set(flips[i], flipFor(i, pile));
+    for (let i = 0; i < N; i++) {
+      if (!flies(i, pile, startIndex)) {
+        slides[i].style.opacity = "0";
+        continue;
+      }
+      utils.set(flips[i], flipFor(i, pile));
+      if (!pile[i].visible) slides[i].style.opacity = "0";
+    }
 
     openTl = createTimeline({
       defaults: { ease: OPEN_EASE },
       onComplete: () => {
         state.flying = false;
         phase = "open";
+        syncMedia();
         render();
       },
     });
     // Outward from the starting image, so the pile deals itself into the row.
     for (let i = 0; i < N; i++) {
-      openTl.add(
-        flips[i],
-        { ...slideRest, duration: dur(620) },
-        dur(lapDist(i, startIndex) * 50),
-      );
+      if (!flies(i, pile, startIndex)) {
+        openTl.add(slides[i], { opacity: 1, duration: dur(300) }, dur(260));
+        continue;
+      }
+      const at = dur(lapDist(i, startIndex) * 50);
+      openTl.add(flips[i], { ...slideRest, duration: dur(620) }, at);
+      // Not part of the visible pile, so it emerges from it rather than
+      // popping on top of it.
+      if (!pile[i].visible) {
+        openTl.add(slides[i], { opacity: 1, duration: dur(240) }, at);
+      }
     }
     openTl
       .add(state, { bd: 1, duration: dur(280), onUpdate: chrome }, 0)
@@ -461,6 +599,7 @@ export default function GalleryOverlay({
     stage.addEventListener("pointercancel", onPointerUp);
     window.addEventListener("keydown", onKeyDown);
     window.addEventListener("resize", onResize);
+    window.addEventListener("popstate", onPopState);
     closeBtn.focus({ preventScroll: true });
 
     return () => {
@@ -468,12 +607,14 @@ export default function GalleryOverlay({
       closeTl?.pause();
       pAnim?.pause();
       dismissAnim?.pause();
+      for (let i = 0; i < N; i++) disposeFull(i);
       stage.removeEventListener("pointerdown", onPointerDown);
       stage.removeEventListener("pointermove", onPointerMove);
       stage.removeEventListener("pointerup", onPointerUp);
       stage.removeEventListener("pointercancel", onPointerUp);
       window.removeEventListener("keydown", onKeyDown);
       window.removeEventListener("resize", onResize);
+      window.removeEventListener("popstate", onPopState);
       document.documentElement.style.overflow = previousOverflow;
     };
   }, [images, startIndex, getPile, onClosed]);
@@ -507,7 +648,12 @@ export default function GalleryOverlay({
               className="gallery-flip"
             >
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={image.thumbSrc} alt={image.alt} draggable={false} />
+              <img
+                className="gallery-thumb"
+                src={image.thumbSrc}
+                alt={image.alt}
+                draggable={false}
+              />
             </div>
           </div>
         ))}

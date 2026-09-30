@@ -41,6 +41,12 @@
   --text-xl: 2rem; /* 32px — name */
 
   --radius-tab: 10px; /* tab track + active chip — rounded rectangle */
+
+  /* Where the avatar can float in the left margin instead of stacking above the
+     name. The column is 45rem (20px root font at most = 900px), and the avatar
+     needs 144px + 2.5rem + a gutter on its own side: (w - 900) / 2 >= 210, so
+     1320px. Well above `md`, hence its own breakpoint. */
+  --breakpoint-avatar: 1320px;
 }
 
 html {
@@ -56,6 +62,10 @@ html {
 }
 
 body {
+  /* Transient overhang (the hover-fanned pile, the hire bubble's tail) must
+     never make the page scroll sideways. `clip`, not `hidden`, so it doesn't
+     become a scroll container. */
+  overflow-x: clip;
   background: var(--bg);
   color: var(--text);
   font-family: var(--font-sans), ui-sans-serif, system-ui, sans-serif;
@@ -338,7 +348,8 @@ button:focus-visible {
   display: block;
 }
 
-@media (min-width: 768px) {
+/* Same 1320px as --breakpoint-avatar; a media query can't read the variable. */
+@media (min-width: 1320px) {
   .header-grid {
     position: relative;
   }
@@ -528,14 +539,14 @@ button:focus-visible {
   /* The white frame: padding around the image. GalleryOverlay morphs the same
      three numbers (radius, frame, image radius) as the card becomes a slide,
      so they must match PILE in GalleryOverlay.tsx. */
-  padding: 3px;
+  padding: 2px;
   border-radius: 5px;
-  background: #fff;
+  background: var(--border-tile);
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
 }
 
 .pile-card > img,
-.gallery-flip > img {
+.gallery-thumb {
   display: block;
   width: 100%;
   height: 100%;
@@ -545,7 +556,7 @@ button:focus-visible {
 }
 
 .pile-card > img {
-  border-radius: 2px;
+  border-radius: 3px;
 }
 
 .gallery-stage {
@@ -584,13 +595,31 @@ button:focus-visible {
   width: 100%;
   height: 100%;
   overflow: hidden;
-  padding: var(--frame, 6px);
+  padding: var(--frame, 3px);
   border-radius: 14px;
-  background: #fff;
+  background: var(--border-tile);
 }
 
-.gallery-flip > img {
-  border-radius: var(--ir, 8px);
+.gallery-flip {
+  position: relative;
+}
+
+.gallery-thumb {
+  border-radius: var(--ir, 11px);
+}
+
+/* The full video/image, stacked exactly over the thumb inside the frame. It
+   fades in once it can show a frame, and back out on close. */
+.gallery-full {
+  position: absolute;
+  inset: var(--frame, 3px);
+  width: calc(100% - 2 * var(--frame, 3px));
+  height: calc(100% - 2 * var(--frame, 3px));
+  object-fit: cover;
+  border-radius: var(--ir, 11px);
+  opacity: 0;
+  transition: opacity 260ms ease;
+  pointer-events: none;
 }
 
 .gallery-close {
@@ -604,12 +633,16 @@ button:focus-visible {
   margin-left: -24px;
   border-radius: 50%;
   color: var(--text);
-  background: rgba(38, 38, 43, 0.85);
+  background: rgba(38, 38, 43, 0.72);
+  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.1),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.12),
     0 4px 16px rgba(0, 0, 0, 0.5);
   cursor: pointer;
   opacity: 0;
+  /* Above every slide: slides take the pile's z-index (up to N) while they fly. */
+  z-index: 1000;
 }
 
 /* Row hover reads in the type, not in a background fill. */
