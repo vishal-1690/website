@@ -119,15 +119,53 @@ export default function WorkGallery({
     cards().forEach((card, i) => utils.set(card, toParams(restPose(i))));
   }, []);
 
+  /**
+   * How far the whole fan must shift left to keep its rightmost card inside the
+   * viewport. The pile is right-aligned in its row, so on a narrow screen the fan
+   * would otherwise reach past the edge and make the page scroll sideways.
+   */
+  const fanShift = (visible: { card: HTMLSpanElement; pose: CardPose }[]) => {
+    const stack = triggerRef.current?.querySelector(".pile-stack");
+    if (!stack) return 0;
+    const box = stack.getBoundingClientRect();
+    const centre = box.left + box.width / 2;
+    const edge = document.documentElement.clientWidth - 8;
+    let right = -Infinity;
+    for (const { card, pose } of visible) {
+      const rad = (Math.abs(pose.rotate) * Math.PI) / 180;
+      // Half the width of the rotated card's bounding box.
+      const half =
+        (card.offsetWidth / 2) * Math.cos(rad) +
+        (card.offsetHeight / 2) * Math.sin(rad);
+      right = Math.max(right, centre + pose.x + half);
+    }
+    return Math.min(0, edge - right);
+  };
+
   const fan = (mode: "rest" | "hover") => {
     const n = images.length;
-    cards().forEach((card, i) => {
-      const rank = mod(i - top.current, n);
+    const list = cards();
+    const ranks = list.map((_, i) => mod(i - top.current, n));
+
+    const shift =
+      mode === "hover"
+        ? fanShift(
+            list.flatMap((card, i) =>
+              ranks[i] < MAX_VISIBLE
+                ? [{ card, pose: hoverPose(ranks[i]) }]
+                : [],
+            ),
+          )
+        : 0;
+
+    list.forEach((card, i) => {
+      const rank = ranks[i];
       // Stashed cards are invisible, but they still count towards the page's
       // scroll width, so they must not swing out with the fan.
       const fanned = mode === "hover" && rank < MAX_VISIBLE;
+      const pose = fanned ? hoverPose(rank) : restPose(rank);
       animate(card, {
-        ...toParams(fanned ? hoverPose(rank) : restPose(rank)),
+        ...toParams({ ...pose, x: pose.x + (fanned ? shift : 0) }),
         duration: mode === "hover" ? 420 : 340,
         ease: settleEase,
       });
@@ -243,7 +281,15 @@ export default function WorkGallery({
         aria-label={label}
         aria-haspopup="dialog"
         onPointerEnter={(e) => {
-          if (e.pointerType !== "mouse") return;
+          // A real hover, not a touch (or iOS's emulated mouse events) that
+          // merely reports one. Checked twice on purpose: the event's type and
+          // the device's capability.
+          if (
+            e.pointerType !== "mouse" ||
+            !window.matchMedia("(hover: hover) and (pointer: fine)").matches
+          ) {
+            return;
+          }
           prewarm();
           fan("hover");
         }}
@@ -252,8 +298,7 @@ export default function WorkGallery({
             pressed.current = false;
             setPressed(false);
           }
-          if (e.pointerType === "mouse" && !open) fan("rest");
-        }}
+          if (e.pointerType === "mouse" && !open) fan("rest");        }}
         onPointerDown={(e) => {
           if (e.button !== 0) return;
           pressed.current = true;

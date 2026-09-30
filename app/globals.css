@@ -61,11 +61,20 @@ html {
   font-size: clamp(93.75%, 0.9rem + 0.5vw, 125%);
 }
 
+/* The page never scrolls sideways: nothing here needs it, and transient
+   overhang (the hover-fanned pile, the hire bubble's tail, slides flying to
+   their off-screen carousel positions) must not be able to cause it.
+   iOS Safari needs this on <html> as well as <body>, and before iOS 16 it has
+   no `clip`, so `hidden` is declared first as the fallback. `clip` is preferred
+   where supported because it doesn't create a scroll container. */
+html,
 body {
-  /* Transient overhang (the hover-fanned pile, the hire bubble's tail) must
-     never make the page scroll sideways. `clip`, not `hidden`, so it doesn't
-     become a scroll container. */
+  overflow-x: hidden;
   overflow-x: clip;
+  overscroll-behavior-x: none;
+}
+
+body {
   background: var(--bg);
   color: var(--text);
   font-family: var(--font-sans), ui-sans-serif, system-ui, sans-serif;
@@ -563,6 +572,11 @@ button:focus-visible {
   position: fixed;
   inset: 0;
   z-index: 50;
+  /* Slides are positioned far beyond the screen edge (neighbours, and during the
+     spread). iOS lets overflow from a fixed element widen the pannable area, so
+     the stage has to contain it. Doesn't affect swiping: that is our own pointer
+     handling, not native scroll. */
+  overflow: hidden;
   touch-action: none;
   overscroll-behavior: contain;
   user-select: none;
