@@ -1,4 +1,6 @@
 import LogoMark from "./LogoMark";
+import WorkGallery from "./WorkGallery";
+import { getGallery } from "@/content/gallery";
 import { formatRange, type Experience } from "@/content/site";
 
 /**
@@ -8,6 +10,7 @@ import { formatRange, type Experience } from "@/content/site";
  */
 export default function WorkRow({ item }: { item: Experience }) {
   const range = formatRange(item.start, item.end);
+  const images = item.gallery ? getGallery(item.gallery) : [];
 
   return (
     <article className="work-row grid grid-cols-1 items-start gap-y-3 py-5 sm:grid-cols-[78px_1fr_auto] sm:gap-x-5 sm:gap-y-0">
@@ -40,9 +43,21 @@ export default function WorkRow({ item }: { item: Experience }) {
         </p>
       </div>
 
-      <span className="row-date hidden text-2xs whitespace-nowrap text-faint tabular-nums sm:col-start-3 sm:block sm:pt-0.5">
-        {range}
-      </span>
+      {/* One column-3 wrapper so the pile sits directly under the date rather
+          than under the (taller) description. On mobile it drops below the
+          description, left aligned. */}
+      <div className="flex flex-col items-end gap-3 sm:col-start-3 sm:self-stretch sm:justify-between">
+        <span className="row-date hidden text-2xs whitespace-nowrap text-faint tabular-nums sm:block sm:pt-0.5">
+          {range}
+        </span>
+        {images.length > 0 && (
+          <WorkGallery
+            images={images}
+            label={`View ${images.length} screenshots from ${item.company}`}
+            caption={`${images.length} screenshots`}
+          />
+        )}
+      </div>
     </article>
   );
 }

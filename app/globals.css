@@ -91,10 +91,20 @@ p {
   color: var(--text);
 }
 
+/* Ring for links and other non-button targets. It deliberately does not set
+   border-radius: that reshaped whatever was focused, and the outline already
+   follows the element's own corners. */
 :focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 3px;
-  border-radius: 4px;
+}
+
+/* Buttons here are styled controls (pile, close, copy, tabs), and the ring on a
+   styled shape reads as a glitch, especially after focus is returned to one
+   programmatically. Anything that needs a keyboard cue provides its own, like
+   the pile's caption. */
+button:focus-visible {
+  outline: none;
 }
 
 /* --- Squircle ---------------------------------------------------------------
@@ -453,6 +463,153 @@ p {
   box-shadow:
     inset 0 2px 4px rgba(0, 0, 0, 0.8),
     inset 0 -1px 0 rgba(255, 255, 255, 0.06);
+}
+
+/* --- Work image pile + gallery ----------------------------------------------
+   The pile's cards are positioned and posed by Anime.js (WorkGallery.tsx); CSS
+   only owns the resting box. Hidden, not unmounted, while the carousel is open,
+   so the layout never shifts and the return flight has somewhere to land. */
+.pile {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.375rem;
+  flex-shrink: 0;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* The box the cards are centred in. Cards are absolutely positioned. */
+.pile-stack {
+  position: relative;
+  display: block;
+  width: 132px;
+  height: 96px;
+}
+
+.pile-stack[data-hidden="true"] {
+  visibility: hidden;
+}
+
+.pile-caption {
+  font-size: var(--text-2xs);
+  line-height: 1;
+  color: var(--text-faint);
+  white-space: nowrap;
+  transition: color 160ms ease;
+}
+
+@media (hover: hover) {
+  .pile:hover .pile-caption {
+    color: var(--text);
+  }
+}
+
+/* The global ring reads as a stray box around a pile of tilted cards, and it
+   shows up after every close because focus returns here. Keyboard focus is
+   marked on the caption instead, so it is still visible. */
+.pile:focus-visible {
+  outline: none;
+}
+
+.pile:focus-visible .pile-caption {
+  color: var(--text);
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+}
+
+.pile-card {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  display: block;
+  overflow: hidden;
+  /* The white frame: padding around the image. GalleryOverlay morphs the same
+     three numbers (radius, frame, image radius) as the card becomes a slide,
+     so they must match PILE in GalleryOverlay.tsx. */
+  padding: 3px;
+  border-radius: 5px;
+  background: #fff;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
+}
+
+.pile-card > img,
+.gallery-flip > img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  pointer-events: none;
+  -webkit-user-drag: none;
+}
+
+.pile-card > img {
+  border-radius: 2px;
+}
+
+.gallery-stage {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  touch-action: none;
+  overscroll-behavior: contain;
+  user-select: none;
+  -webkit-user-select: none;
+  cursor: grab;
+}
+
+.gallery-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(6, 6, 8, 0.94);
+  opacity: 0;
+}
+
+.gallery-track {
+  position: absolute;
+  inset: 0;
+}
+
+/* Sized and positioned by JS; render() owns its transform and filter. */
+.gallery-slide {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  will-change: transform, filter;
+}
+
+/* Animated by Anime.js: the offset between this slide and its pile card. */
+.gallery-flip {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  padding: var(--frame, 6px);
+  border-radius: 14px;
+  background: #fff;
+}
+
+.gallery-flip > img {
+  border-radius: var(--ir, 8px);
+}
+
+.gallery-close {
+  position: absolute;
+  bottom: calc(1.5rem + env(safe-area-inset-bottom));
+  left: 50%;
+  display: grid;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  margin-left: -24px;
+  border-radius: 50%;
+  color: var(--text);
+  background: rgba(38, 38, 43, 0.85);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.1),
+    0 4px 16px rgba(0, 0, 0, 0.5);
+  cursor: pointer;
+  opacity: 0;
 }
 
 /* Row hover reads in the type, not in a background fill. */

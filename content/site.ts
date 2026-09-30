@@ -59,6 +59,8 @@ export interface Experience {
   end: string | null;
   description: string;
   url?: string;
+  /** Slug of an image gallery in content/gallery.ts, shown as a stack under the date. */
+  gallery?: string;
 }
 
 export interface AboutContent {
@@ -143,6 +145,7 @@ export const site: SiteContent = {
       role: "Senior Frontend Engineer",
       start: "2023-09",
       end: "2026-06",
+      gallery: "flipai",
       description:
         "An LLM-driven root cause analysis tool for SRE teams at large enterprises. Built the debugging surface: dense time-series charts you can brush-select to drive the analysis, several kinds of evidence rendered side by side, and an inline-widget system so the model could answer with interactive components instead of plain text.",
     },
