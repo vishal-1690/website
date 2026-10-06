@@ -436,31 +436,30 @@ button:focus-visible {
   text-decoration-color: currentColor;
 }
 
-/* --- The one animation ------------------------------------------------------
-   app/template.tsx remounts on every tab change, which restarts this keyframe.
-   `both` keeps the end state applied, so content is never left invisible. */
-@keyframes blur-in {
-  from {
-    opacity: 0;
-    filter: blur(6px);
-    transform: translateY(4px);
-  }
-  to {
-    opacity: 1;
-    filter: blur(0);
-    transform: none;
-  }
+/* --- Route transition -------------------------------------------------------
+   app/template.tsx drives enter and exit with Web Animations (Anime's `waapi`).
+   Here is only what the animation can't express: while the outgoing page is
+   ghosted it is inert, and it scales about the edge it hangs from, not its
+   centre, so shrinking doesn't pull it away from the nav. */
+.route-body {
+  transform-origin: 50% 0;
 }
 
-.route-body {
-  animation: blur-in 260ms cubic-bezier(0.16, 1, 0.3, 1) both;
+.route-body[data-ghost] {
+  pointer-events: none;
+  user-select: none;
 }
 
 /* --- Segmented tabs ---------------------------------------------------------
    The inverse of .btn-metal: a raised track with the active tab recessed into
-   it. The active tab paints its own background, so there is no separately
-   positioned pill to keep in sync. */
+   it. The recess is one `.nav-pill` that SegmentedNav slides under the tabs.
+
+   Until that script has run (the server-rendered page, no JS) the pill doesn't
+   exist visually, so the active tab paints the same recess itself and the page
+   is correct without scripting. `data-ready` swaps one for the other. */
 .nav-well {
+  position: relative;
+  isolation: isolate;
   border-radius: var(--radius-tab);
   background: linear-gradient(180deg, #33333b 0%, #2a2a31 100%);
   box-shadow:
@@ -470,19 +469,53 @@ button:focus-visible {
 }
 
 .nav-tab {
+  position: relative;
+  z-index: 1;
   border-radius: calc(var(--radius-tab) - 4px);
-  transition:
-    color 160ms ease,
-    background 160ms ease,
-    box-shadow 160ms ease;
+  transition: color 160ms ease;
 }
 
-.nav-tab-active {
-  color: var(--text);
+/* Reserves the width of the bold label, so changing the active tab's weight
+   never changes its width and nudges the tabs beside it mid-slide. */
+.nav-tab::after {
+  content: attr(data-label);
+  display: block;
+  height: 0;
+  overflow: hidden;
+  visibility: hidden;
+  font-weight: 500;
+  pointer-events: none;
+}
+
+.nav-pill,
+.nav-well:not([data-ready]) .nav-tab-active {
   background: linear-gradient(180deg, #0e0e11 0%, #16161a 100%);
   box-shadow:
     inset 0 2px 4px rgba(0, 0, 0, 0.8),
     inset 0 -1px 0 rgba(255, 255, 255, 0.06);
+}
+
+.nav-tab-active {
+  color: var(--text);
+}
+
+/* Matches the well's 4px padding. Left, width and the translate are all written
+   by SegmentedNav; this only sets the resting box. */
+.nav-pill {
+  position: absolute;
+  z-index: 0;
+  top: 0.25rem;
+  bottom: 0.25rem;
+  left: 0;
+  width: 0;
+  border-radius: calc(var(--radius-tab) - 4px);
+  opacity: 0;
+  pointer-events: none;
+  will-change: transform;
+}
+
+.nav-well[data-ready] .nav-pill {
+  opacity: 1;
 }
 
 /* --- Work image pile + gallery ----------------------------------------------
