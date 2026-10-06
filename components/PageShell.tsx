@@ -72,6 +72,47 @@ export default function PageShell({ children }: { children: React.ReactNode }) {
     };
   }, []);
 
+  // Entering play while scrolled. The dock turns sticky and pins to the top of
+  // the viewport at its full, un-collapsed height, so the whole profile would
+  // appear there and then slide away: the slide would start from the top of the
+  // page rather than from where the visitor is. Instead, start the margin from
+  // where the profile *is*: scrolled out by `scrollY`, capped at its height. If
+  // it was fully off-screen the bar starts with no gutter and the gutter grows
+  // to the peek; if it was partly visible, what's visible slides up from there.
+  // The document gets shorter by the same amount, so the scroll position is
+  // reduced to keep the content under the bar where it was.
+  const wasPlay = useRef(isPlay);
+  useLayoutEffect(() => {
+    const entering = isPlay && !wasPlay.current;
+    wasPlay.current = isPlay;
+    if (!entering) return;
+
+    const shell = ref.current;
+    const slide = shell?.querySelector<HTMLElement>("[data-profile-slide]");
+    const scrolled = window.scrollY;
+    // `data-animate` is the first-measure guard; before it, nothing is animated.
+    if (!shell || !slide || scrolled <= 0 || !shell.hasAttribute("data-animate"))
+      return;
+
+    const hidden = Math.min(scrolled, slide.offsetHeight);
+    slide.style.transition = "none";
+    slide.style.marginTop = `${-hidden}px`;
+    // Settle that start value (a computed style the transition can run from)
+    // before the margin is released toward its docked value.
+    void slide.offsetHeight;
+    window.scrollTo(0, scrolled - hidden);
+
+    const frame = requestAnimationFrame(() => {
+      slide.style.removeProperty("transition");
+      slide.style.removeProperty("margin-top");
+    });
+    return () => {
+      cancelAnimationFrame(frame);
+      slide.style.removeProperty("transition");
+      slide.style.removeProperty("margin-top");
+    };
+  }, [isPlay]);
+
   // What is slid out of view shouldn't stay reachable by keyboard or screen
   // reader: its links are behind the bar.
   useEffect(() => {
