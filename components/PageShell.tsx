@@ -5,14 +5,48 @@ import { useSelectedLayoutSegment } from "next/navigation";
 import { cssTimeMs } from "@/lib/css-time";
 import { routeTransition } from "@/lib/route-transition";
 
-type Tops = { slide: number; nav: number; main: number };
+type Tops = { dock: number; main: number };
 
-/** The three parts that change position when the profile docks or undocks. */
+/** The two parts that change position when the page is scrolled to or from the dock. */
 function partsOf(shell: HTMLElement | null) {
-  const slide = shell?.querySelector<HTMLElement>("[data-profile-slide]");
-  const nav = shell?.querySelector<HTMLElement>(".dock-nav");
+  const dock = shell?.querySelector<HTMLElement>(".dock");
   const main = shell?.querySelector<HTMLElement>("main");
-  return slide && nav && main ? { slide, nav, main } : null;
+  return dock && main ? { dock, main } : null;
+}
+
+let pendingUnpins = 0;
+
+/**
+ * Scrolls to the dock without the dock-pin animation (globals.css) double
+ * counting it. The pin cancels any scroll shortfall by translating the dock and
+ * the content, but it reads the scroll offset a frame behind a programmatic
+ * scroll: the frame the clamp lands, the offset is already D while the pin still
+ * applies the old shortfall, and for that one frame the dock and content sit a
+ * whole dock-height out (the "flicker"). At D the pin is not needed, so it is
+ * switched off for the frames around the jump.
+ */
+function scrollToDock(shell: HTMLElement | null, y: number) {
+  if (!shell) {
+    window.scrollTo(0, y);
+    return;
+  }
+  pendingUnpins += 1;
+  shell.setAttribute("data-unpin", "");
+  window.scrollTo(0, y);
+  requestAnimationFrame(() =>
+    requestAnimationFrame(() => {
+      pendingUnpins = Math.max(0, pendingUnpins - 1);
+      if (pendingUnpins === 0) shell.removeAttribute("data-unpin");
+    }),
+  );
+}
+
+/**
+ * How far down the page is scrolled when docked: the profile's height less the
+ * peek that stays showing. The profile's own top padding *is* the peek.
+ */
+function dockOffset(slide: HTMLElement) {
+  return slide.offsetHeight - parseFloat(getComputedStyle(slide).paddingTop);
 }
 
 /** Width the browser's scrollbars take: 0 for overlay scrollbars (iOS, macOS default). */
@@ -28,8 +62,7 @@ function scrollbarWidth() {
 
 function topsOf(parts: NonNullable<ReturnType<typeof partsOf>>): Tops {
   return {
-    slide: parts.slide.getBoundingClientRect().top,
-    nav: parts.nav.getBoundingClientRect().top,
+    dock: parts.dock.getBoundingClientRect().top,
     main: parts.main.getBoundingClientRect().top,
   };
 }
@@ -74,22 +107,50 @@ export default function PageShell({ children }: { children: React.ReactNode }) {
   }, [segment]);
 
 
-  // The profile slides up by (its height − the peek), and CSS can't read an
-  // element's height into a margin it can transition, so it is measured here.
-  // The slide transition stays off until after this first measure, so landing
-  // directly on /play doesn't play the dock-up on load.
+  // Docking is a scroll position, not a layout change (see `.dock` in
+  // globals.css): in play the page is held scrolled down by D, the profile's
+  // height less the peek. CSS can't read an element's height, so it is measured
+  // here, into `--profile-h` (which the sticky offset and the scroll room read)
+  // and `dockD` (which the lock and the scroll below read).
+  const dockD = useRef(0);
+  const inPlay = useRef(isPlay);
+  useLayoutEffect(() => {
+    inPlay.current = isPlay;
+  }, [isPlay]);
+
   useLayoutEffect(() => {
     const shell = ref.current;
     const slide = shell?.querySelector<HTMLElement>("[data-profile-slide]");
     if (!shell || !slide) return;
 
-    const measure = () =>
+    const nav = shell.querySelector<HTMLElement>(".dock-nav");
+    const measure = () => {
       shell.style.setProperty("--profile-h", `${slide.offsetHeight}px`);
+      dockD.current = dockOffset(slide);
+      // How tall the bar is on screen when docked (the peek, the gap, the tabs),
+      // for the fixed veil that sits behind it.
+      if (nav) {
+        shell.style.setProperty(
+          "--bar-h",
+          `${nav.offsetTop + nav.offsetHeight - dockD.current}px`,
+        );
+      }
+      // The size changed (resize, rotation, font load): stay docked.
+      if (inPlay.current && window.scrollY < dockD.current - 1) {
+        scrollToDock(shell, dockD.current);
+      }
+    };
     measure();
-    // Hands the docked layout from the CSS pre-measure fallback to the margin.
+    // Hands the docked layout from the CSS pre-measure fallback to the real one,
+    // and scrolls to the dock in the same step, so landing on /play looks the
+    // same before and after.
     shell.setAttribute("data-measured", "");
+    if (inPlay.current) scrollToDock(shell, dockD.current);
+
     const observer = new ResizeObserver(measure);
     observer.observe(slide);
+    if (nav) observer.observe(nav);
+    // Nothing animates until after this first measure.
     const frame = requestAnimationFrame(() =>
       shell.setAttribute("data-animate", ""),
     );
@@ -99,16 +160,87 @@ export default function PageShell({ children }: { children: React.ReactNode }) {
     };
   }, []);
 
-  // The dock-up and dock-down are a FLIP: the layout changes to its final state
-  // at once, and `transform` carries each moving part from where it *was* on
-  // screen to where it now is. Animating the layout itself (a margin) re-flows
-  // the whole page every frame on the main thread, and iOS Safari, which also has
-  // no scroll anchoring, showed that as the content jumping; transforms run on
-  // the compositor.
+  // Entering from a page too short to be scrolled to D (about) can't get there
+  // yet: the room is reserved by the play route's own commit. Once it has landed,
+  // finish the job.
+  useLayoutEffect(() => {
+    if (inPlay.current && window.scrollY < dockD.current - 1) {
+      scrollToDock(ref.current, dockD.current);
+    }
+  }, [segment]);
+
+  // In play the page can be scrolled down, but not back up past the dock: the
+  // profile stays tucked. The input is stopped where it starts (wheel, touch),
+  // and a scroll listener catches whatever gets past (keys, the scrollbar). Only
+  // upward is locked, because the play content may be taller than the screen.
+  useEffect(() => {
+    if (!isPlay) return;
+
+    const atDock = () => window.scrollY <= dockD.current + 1;
+    const below = () => window.scrollY < dockD.current - 1;
+
+    // Where the pin (globals.css) is supported it already hides any overshoot, so
+    // the real scroll position is left alone while the page is moving: a jump
+    // mid-gesture is a frame late, doesn't stop a fling on every platform, and
+    // meant switching the pin off exactly while the scroll was still going. It is
+    // put right once scrolling has stopped, when switching the pin off for the
+    // jump costs nothing. Without the pin there is nothing hiding the overshoot,
+    // so it is corrected at once, as before.
+    const pinned = CSS.supports("animation-timeline: scroll()");
+    let idle: ReturnType<typeof setTimeout> | undefined;
+    const onScroll = () => {
+      if (!below()) {
+        clearTimeout(idle);
+        return;
+      }
+      if (!pinned) {
+        scrollToDock(ref.current, dockD.current);
+        return;
+      }
+      clearTimeout(idle);
+      idle = setTimeout(() => {
+        if (below()) scrollToDock(ref.current, dockD.current);
+      }, 120);
+    };
+    const onWheel = (event: WheelEvent) => {
+      // ctrl + wheel is a zoom, not a scroll.
+      if (event.deltaY < 0 && !event.ctrlKey && atDock()) event.preventDefault();
+    };
+    let lastY = 0;
+    const onTouchStart = (event: TouchEvent) => {
+      lastY = event.touches[0].clientY;
+    };
+    const onTouchMove = (event: TouchEvent) => {
+      if (event.touches.length !== 1) return;
+      const y = event.touches[0].clientY;
+      // A finger moving down scrolls the page up.
+      if (y > lastY && atDock() && event.cancelable) event.preventDefault();
+      lastY = y;
+    };
+
+    window.addEventListener("scroll", onScroll, { passive: true });
+    window.addEventListener("wheel", onWheel, { passive: false });
+    window.addEventListener("touchstart", onTouchStart, { passive: true });
+    window.addEventListener("touchmove", onTouchMove, { passive: false });
+    return () => {
+      clearTimeout(idle);
+      window.removeEventListener("scroll", onScroll);
+      window.removeEventListener("wheel", onWheel);
+      window.removeEventListener("touchstart", onTouchStart);
+      window.removeEventListener("touchmove", onTouchMove);
+    };
+  }, [isPlay]);
+
+  // What moves on a switch is only what the scroll position moves, and it is
+  // animated as a FLIP: the change is applied at once, and `transform` carries
+  // the dock and the content from where they *were* on screen to where they now
+  // are. (Animating layout re-flows the page every frame on the main thread;
+  // transforms run on the compositor.) Entering from the top, that is both of
+  // them travelling up by D. Leaving moves nothing: the scroll position stays and
+  // the profile stays tucked.
   //
   // "Where it was" is captured when the tab is clicked, before React re-renders
   // (the bus event is synchronous), so it includes anything already mid-flight.
-  // The parts that move are the profile, the tabs, and the content under them.
   const before = useRef<{ toPlay: boolean; tops: Tops } | null>(null);
   const flights = useRef<Animation[]>([]);
 
@@ -145,9 +277,16 @@ export default function PageShell({ children }: { children: React.ReactNode }) {
     before.current = null;
     const shell = ref.current;
     const parts = partsOf(shell);
+
+    // Entering: go to the dock. Always, with or without an animation: the lock
+    // would otherwise do it as a snap. Past the dock already (scrolled further
+    // down), nothing to do.
+    if (isPlay && window.scrollY < dockD.current - 1) {
+      scrollToDock(shell, dockD.current);
+    }
+
     // `data-animate` is the first-measure guard; before it, nothing is animated.
-    // No snapshot means the change didn't come from a click (back/forward): it
-    // just snaps.
+    // No snapshot means the change didn't come from a click or history: snap.
     if (
       !shell ||
       !parts ||
@@ -162,17 +301,7 @@ export default function PageShell({ children }: { children: React.ReactNode }) {
     // Stop anything still flying so the layout is measured as it really is.
     flights.current.forEach((flight) => flight.cancel());
     flights.current = [];
-
-    let after = topsOf(parts);
-    // Scrolled, the document just got shorter (entering) or taller (leaving), so
-    // the content moved. Move the scroll position by the same amount to hold it
-    // still; whatever can't be held (the top of the page is as far as it goes)
-    // is left for the animation.
-    const scrolled = window.scrollY;
-    if (scrolled > 0) {
-      window.scrollTo(0, Math.max(0, scrolled + after.main - snapshot.tops.main));
-      after = topsOf(parts);
-    }
+    const after = topsOf(parts);
 
     const duration = cssTimeMs("--mode-dur", 420);
     const easing =
@@ -185,9 +314,7 @@ export default function PageShell({ children }: { children: React.ReactNode }) {
       if (Math.abs(distance) < 1) return [];
       return [
         parts[key].animate(
-          {
-            transform: [`translateY(${distance}px)`, "translateY(0)"],
-          },
+          { transform: [`translateY(${distance}px)`, "translateY(0)"] },
           { duration, easing },
         ),
       ];
@@ -307,6 +434,15 @@ export default function PageShell({ children }: { children: React.ReactNode }) {
       data-page={segment === "play" ? "play" : undefined}
     >
       <div ref={sheetRef} className="play-sheet" aria-hidden="true" />
+      {/* The bar's blur: independent fixed layers, not part of the dock, so
+          nothing the dock or the scroll does can move them. See "The veils" in
+          globals.css. */}
+      <div className="play-veil" aria-hidden="true" />
+      <div className="peek-veil" aria-hidden="true">
+        <i />
+        <i />
+        <i />
+      </div>
       {children}
     </div>
   );

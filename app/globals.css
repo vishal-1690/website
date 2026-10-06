@@ -938,42 +938,112 @@ html[data-sheet] body::before {
   display: none;
 }
 
-/* The header block: normally just the profile above the tabs. In play, the
-   whole thing is a bar pinned to the top of the viewport.
+/* The header block: the profile above the tabs. Docking is a *scroll position*,
+   not a layout change: nothing is ever collapsed, the profile keeps its full
+   height in every mode. In play the page is held scrolled down by D (the
+   profile's height less the peek, see PageShell), which leaves the profile's
+   bottom edge showing above the tabs; and the block is sticky with a negative
+   `top` of -D, so it stays like that as the play content scrolls under it.
 
-   `position` is the only thing that changes between the two (sticky and static
+   `position` is the only thing that changes between modes (sticky and static
    both keep it in flow), and `.shell` is the sticky containing block, which is
-   why header and main are siblings under it. */
+   why header and main are siblings under it. `--profile-h` is measured by
+   PageShell; without it (no JS) the offset is 0 and the page is simply normal. */
 .dock {
   isolation: isolate;
 }
 
 .shell[data-mode="play"] .dock {
   position: sticky;
-  top: 0;
+  top: calc(var(--peek) - var(--profile-h, var(--peek)));
   z-index: 30;
 }
 
-/* Everything that scrolls under the bar is veiled: a tinted pane that blurs what
-   is behind it and fades out along its lower edge, so content doesn't hit a hard
-   line. Full-bleed, past the column. Present always, shown only in play. */
-.dock::before {
-  content: "";
-  position: absolute;
-  z-index: -1;
+/* The visual half of the upward lock. PageShell stops upward input and pulls the
+   scroll position back to D, but only after the browser has already scrolled
+   (a scroll event is a frame late; momentum scrolling keeps going), so the page
+   was seen moving past the dock and snapping back, and the dock and its blur with
+   it. A scroll-driven animation closes that gap: while the page is scrolled less
+   than D, it translates the dock and the content down-to-up by exactly the
+   shortfall, so on screen they stay where they are at D. It runs on the
+   compositor, tied to the scroll offset itself, so there is no frame in which the
+   overshoot shows, and the JS clamp can lag without anyone seeing it.
+
+   Applied only while scrolled under D (no fill after the range), so no
+   transform is left behind to become a containing block for fixed descendants.
+   Where the browser lacks scroll-driven animations the lock still works, with the
+   old visible snap. Needs the measured `--profile-h`, hence `data-measured`. */
+@keyframes dock-pin {
+  from {
+    transform: translateY(calc(var(--peek) - var(--profile-h)));
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+
+@supports (animation-timeline: scroll()) {
+  .shell[data-mode="play"][data-measured] .dock,
+  .shell[data-mode="play"][data-measured] .page-main {
+    animation: dock-pin linear backwards;
+    animation-timeline: scroll(root block);
+    /* Ending 1px short of D (the JS clamp's own tolerance): the scroll offset is
+       rounded to whole pixels but D is fractional, so docked it can sit just
+       under D and would otherwise leave a sub-pixel transform on at rest. */
+    animation-range: 0 calc(var(--profile-h) - var(--peek) - 1px);
+  }
+
+  /* Off for the frames around a programmatic jump to the dock (PageShell,
+     `scrollToDock`): the animation reads the scroll offset a frame late, and at
+     the dock it isn't needed. More specific than the rule above, to win. */
+  .shell[data-mode="play"][data-measured][data-unpin] .dock,
+  .shell[data-mode="play"][data-measured][data-unpin] .page-main {
+    animation: none;
+  }
+}
+
+/* Room to be scrolled to D. The document has to be at least D + a viewport tall
+   or the browser clamps the scroll position short of it and the profile shows.
+   `lvh` (the viewport with the mobile toolbars collapsed) so D is reachable
+   whatever state they are in; `vh` first as the fallback. */
+/* Kept while *either* the requested or the committed route is play: from the
+   click that enters (so a short page we are leaving can still be scrolled to D),
+   until the route we are leaving play for has actually arrived. Dropping it at
+   the click on the way out collapsed the short play page before the new one
+   was there, and the browser clamped the scroll position: the content moved. */
+.shell[data-mode="play"],
+.shell[data-page="play"] {
+  min-height: calc(var(--profile-h, 0px) - var(--peek) + 100vh);
+  min-height: calc(var(--profile-h, 0px) - var(--peek) + 100lvh);
+}
+
+/* The veils. The bar's blur is not part of the dock: it is two independent
+   `position: fixed` layers, outside the dock and the content, that PageShell
+   renders and that only fade with the play mode. Fixed to the viewport, they
+   cannot be moved by the scroll offset, by the dock's sticky position, or by the
+   transforms the dock and content carry (the pin, the entry slide), which is what
+   made the blur drift and show its edge when it was a pseudo-element of the dock.
+   They blur whatever happens to be behind them.
+
+   `.play-veil` sits *behind* the dock (z 29 under the dock's 30): a tinted pane
+   covering the bar (the peek, the gap and the tabs), fading out along its lower
+   edge so scrolling content doesn't hit a hard line, so content scrolling under
+   the bar is veiled but the tabs stay crisp. `--bar-h` is measured by PageShell;
+   the fallback is a close estimate for before it has run. */
+.play-veil {
+  position: fixed;
+  z-index: 29;
   top: 0;
-  bottom: -1.5rem;
-  left: 50%;
-  width: 100vw;
-  margin-left: -50vw;
+  right: 0;
+  left: 0;
+  height: calc(var(--bar-h, calc(var(--peek) + 5rem)) + 1.5rem);
   /* The page grid again, crisp, on top of the tint: the veil would otherwise
-     blur and bury it, and the guidelines would start abruptly under the tabs.
-     `fixed` pins it to the viewport like body::before, so the two coincide. */
+     blur and bury it, and the guidelines would start abruptly under the tabs. */
   background:
     linear-gradient(var(--grid-line) 1px, transparent 1px) center top / 7.5rem
-      7.5rem fixed,
+      7.5rem,
     linear-gradient(90deg, var(--grid-line) 1px, transparent 1px) center top /
-      7.5rem 7.5rem fixed,
+      7.5rem 7.5rem,
     color-mix(in srgb, var(--bg) 72%, transparent);
   -webkit-backdrop-filter: blur(14px);
   backdrop-filter: blur(14px);
@@ -984,32 +1054,19 @@ html[data-sheet] body::before {
   transition: opacity var(--mode-dur) var(--mode-ease);
 }
 
-.shell[data-mode="play"] .dock::before {
+.shell[data-mode="play"] .play-veil {
   opacity: 1;
 }
-
-/* Clipping box for the profile. Its height is the slide's height plus the
-   slide's (negative) margin, so it shrinks to the peek on its own. flow-root
-   stops that margin collapsing through to the dock. */
 .profile-top {
   position: relative;
-  display: flow-root;
 }
 
-/* `--profile-h` is measured by PageShell. Until it is (and for no-JS) the
-   fallback makes the margin zero, so the profile simply stays put. The margin is
-   never transitioned: the layout changes at once and PageShell animates
-   `transform` from the old position to the new one (a FLIP), which runs on the
-   compositor instead of re-flowing the page every frame. */
-.shell[data-mode="play"] .profile-slide {
-  margin-top: calc(var(--peek) - var(--profile-h, var(--peek)));
-}
-
-/* Before PageShell has measured (server HTML, hydration, no JS) the margin above
-   has no height to work from. A direct load of /play would show the whole
-   profile for a beat and then snap it away, so until then pin the profile's
-   bottom into a peek-high box instead. It paints exactly what the margin version
-   does, so `data-measured` swaps one for the other with no visible change. */
+/* Before PageShell has measured (server HTML, hydration, no JS) it can't yet
+   scroll the page down by D. A direct load of /play would show the whole profile
+   for a beat and then snap it away, so until then pin the profile's bottom into
+   a peek-high box instead. It paints what the scrolled page will, so when
+   `data-measured` swaps it for the real layout and PageShell scrolls to D in the
+   same step, nothing visibly changes. */
 .shell[data-mode="play"]:not([data-measured]) .profile-top {
   display: flex;
   flex-direction: column;
@@ -1025,10 +1082,16 @@ html[data-sheet] body::before {
 /* Progressive blur over the peek: three stacked backdrop blurs, each masked to
    fade out sooner than the one beneath it, so blur builds smoothly toward the top
    edge instead of stepping. A tint under them dissolves the first line into the
-   bar. */
+   bar. The second independent fixed layer (see the veils above): *over* the dock
+   (z 31), covering exactly the top `--peek` of the viewport, where the profile's
+   bottom edge shows; the tabs start below it, so they are never under it. */
 .peek-veil {
-  position: absolute;
-  inset: 0;
+  position: fixed;
+  z-index: 31;
+  top: 0;
+  right: 0;
+  left: 0;
+  height: var(--peek);
   pointer-events: none;
   opacity: 0;
   background: linear-gradient(to bottom, var(--bg) 0%, transparent 85%);
@@ -1065,20 +1128,15 @@ html[data-sheet] body::before {
   opacity: 1;
 }
 
-/* The gap between profile and tabs tightens as it docks. */
+/* The gap between the profile and the tabs is the same in every mode: changing
+   it would change the layout, which docking no longer does. */
 .dock-nav {
   margin-top: 2rem;
-  padding-bottom: 0;
-}
-
-.shell[data-mode="play"] .dock-nav {
-  margin-top: 0.5rem;
-  padding-bottom: 0.75rem;
 }
 
 /* The "open to work" bubble has no place on the play page. HireBubble closes
    itself on entering play and reopens on leaving; this hides it at once, since
-   its close animation would otherwise play out over the sliding profile. */
+   its close animation would otherwise play out over the profile. */
 .shell[data-mode="play"] .hire-root {
   visibility: hidden;
 }

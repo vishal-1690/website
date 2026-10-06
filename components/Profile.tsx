@@ -73,12 +73,6 @@ export default function Profile() {
             </p>
           </div>
         </div>
-
-        <div className="peek-veil" aria-hidden="true">
-          <i />
-          <i />
-          <i />
-        </div>
       </div>
 
       <div className="dock-nav">
