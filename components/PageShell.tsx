@@ -15,44 +15,6 @@ function partsOf(shell: HTMLElement | null) {
 }
 
 /**
- * Whether the page is *held* at the dock in play: only on devices with a fine
- * pointer and hover (desktop). On touch devices the page docks on entry but then
- * scrolls freely: the visitor can scroll up and bring the profile into view like
- * on any page. That drops the upward lock, the pin and the clamp where they were
- * hardest to get right (native touch momentum can't be cancelled or scaled).
- */
-function holdsDock() {
-  return window.matchMedia("(hover: hover) and (pointer: fine)").matches;
-}
-
-let pendingUnpins = 0;
-
-/**
- * Scrolls to the dock without the dock-pin animation (globals.css) double
- * counting it. The pin cancels any scroll shortfall by translating the dock and
- * the content, but it reads the scroll offset a frame behind a programmatic
- * scroll: the frame the clamp lands, the offset is already D while the pin still
- * applies the old shortfall, and for that one frame the dock and content sit a
- * whole dock-height out (the "flicker"). At D the pin is not needed, so it is
- * switched off for the frames around the jump.
- */
-function scrollToDock(shell: HTMLElement | null, y: number) {
-  if (!shell) {
-    window.scrollTo(0, y);
-    return;
-  }
-  pendingUnpins += 1;
-  shell.setAttribute("data-unpin", "");
-  window.scrollTo(0, y);
-  requestAnimationFrame(() =>
-    requestAnimationFrame(() => {
-      pendingUnpins = Math.max(0, pendingUnpins - 1);
-      if (pendingUnpins === 0) shell.removeAttribute("data-unpin");
-    }),
-  );
-}
-
-/**
  * How far down the page is scrolled when docked: the profile's height less the
  * peek that stays showing. The profile's own top padding *is* the peek.
  */
@@ -119,10 +81,11 @@ export default function PageShell({ children }: { children: React.ReactNode }) {
 
 
   // Docking is a scroll position, not a layout change (see `.dock` in
-  // globals.css): in play the page is held scrolled down by D, the profile's
-  // height less the peek. CSS can't read an element's height, so it is measured
-  // here, into `--profile-h` (which the sticky offset and the scroll room read)
-  // and `dockD` (which the lock and the scroll below read).
+  // globals.css): entering play scrolls the page down by D, the profile's height
+  // less the peek, and nothing holds it there: the visitor can scroll back up. CSS
+  // can't read an element's height, so it is measured here, into `--profile-h`
+  // (which the sticky offset and the scroll room read) and `dockD` (which the
+  // scroll below reads).
   const dockD = useRef(0);
   const inPlay = useRef(isPlay);
   useLayoutEffect(() => {
@@ -136,6 +99,7 @@ export default function PageShell({ children }: { children: React.ReactNode }) {
 
     const nav = shell.querySelector<HTMLElement>(".dock-nav");
     const measure = () => {
+      const wasDocked = Math.abs(window.scrollY - dockD.current) < 2;
       shell.style.setProperty("--profile-h", `${slide.offsetHeight}px`);
       dockD.current = dockOffset(slide);
       // How tall the bar is on screen when docked (the peek, the gap, the tabs),
@@ -146,22 +110,16 @@ export default function PageShell({ children }: { children: React.ReactNode }) {
           `${nav.offsetTop + nav.offsetHeight - dockD.current}px`,
         );
       }
-      // The size changed (resize, rotation, font load): stay docked, where the
-      // dock is held. Elsewhere the visitor may have scrolled up on purpose.
-      if (
-        inPlay.current &&
-        holdsDock() &&
-        window.scrollY < dockD.current - 1
-      ) {
-        scrollToDock(shell, dockD.current);
-      }
+      // The size changed (resize, rotation, a font arriving): a page that was
+      // docked stays docked. One the visitor has scrolled elsewhere is left alone.
+      if (inPlay.current && wasDocked) window.scrollTo(0, dockD.current);
     };
     measure();
     // Hands the docked layout from the CSS pre-measure fallback to the real one,
     // and scrolls to the dock in the same step, so landing on /play looks the
     // same before and after.
     shell.setAttribute("data-measured", "");
-    if (inPlay.current) scrollToDock(shell, dockD.current);
+    if (inPlay.current) window.scrollTo(0, dockD.current);
 
     const observer = new ResizeObserver(measure);
     observer.observe(slide);
@@ -181,79 +139,17 @@ export default function PageShell({ children }: { children: React.ReactNode }) {
   // finish the job.
   useLayoutEffect(() => {
     if (inPlay.current && window.scrollY < dockD.current - 1) {
-      scrollToDock(ref.current, dockD.current);
+      window.scrollTo(0, dockD.current);
     }
   }, [segment]);
-
-  // In play the page can be scrolled down, but not back up past the dock: the
-  // profile stays tucked. The input is stopped where it starts (wheel, touch),
-  // and a scroll listener catches whatever gets past (keys, the scrollbar). Only
-  // upward is locked, because the play content may be taller than the screen.
-  useEffect(() => {
-    if (!isPlay || !holdsDock()) return;
-
-    const atDock = () => window.scrollY <= dockD.current + 1;
-    const below = () => window.scrollY < dockD.current - 1;
-
-    // Where the pin (globals.css) is supported it already hides any overshoot, so
-    // the real scroll position is left alone while the page is moving: a jump
-    // mid-gesture is a frame late, doesn't stop a fling on every platform, and
-    // meant switching the pin off exactly while the scroll was still going. It is
-    // put right once scrolling has stopped, when switching the pin off for the
-    // jump costs nothing. Without the pin there is nothing hiding the overshoot,
-    // so it is corrected at once, as before.
-    const pinned = CSS.supports("animation-timeline: scroll()");
-    let idle: ReturnType<typeof setTimeout> | undefined;
-    const onScroll = () => {
-      if (!below()) {
-        clearTimeout(idle);
-        return;
-      }
-      if (!pinned) {
-        scrollToDock(ref.current, dockD.current);
-        return;
-      }
-      clearTimeout(idle);
-      idle = setTimeout(() => {
-        if (below()) scrollToDock(ref.current, dockD.current);
-      }, 120);
-    };
-    const onWheel = (event: WheelEvent) => {
-      // ctrl + wheel is a zoom, not a scroll.
-      if (event.deltaY < 0 && !event.ctrlKey && atDock()) event.preventDefault();
-    };
-    let lastY = 0;
-    const onTouchStart = (event: TouchEvent) => {
-      lastY = event.touches[0].clientY;
-    };
-    const onTouchMove = (event: TouchEvent) => {
-      if (event.touches.length !== 1) return;
-      const y = event.touches[0].clientY;
-      // A finger moving down scrolls the page up.
-      if (y > lastY && atDock() && event.cancelable) event.preventDefault();
-      lastY = y;
-    };
-
-    window.addEventListener("scroll", onScroll, { passive: true });
-    window.addEventListener("wheel", onWheel, { passive: false });
-    window.addEventListener("touchstart", onTouchStart, { passive: true });
-    window.addEventListener("touchmove", onTouchMove, { passive: false });
-    return () => {
-      clearTimeout(idle);
-      window.removeEventListener("scroll", onScroll);
-      window.removeEventListener("wheel", onWheel);
-      window.removeEventListener("touchstart", onTouchStart);
-      window.removeEventListener("touchmove", onTouchMove);
-    };
-  }, [isPlay]);
 
   // What moves on a switch is only what the scroll position moves, and it is
   // animated as a FLIP: the change is applied at once, and `transform` carries
   // the dock and the content from where they *were* on screen to where they now
   // are. (Animating layout re-flows the page every frame on the main thread;
   // transforms run on the compositor.) Entering from the top, that is both of
-  // them travelling up by D. Leaving moves nothing: the scroll position stays and
-  // the profile stays tucked.
+  // them travelling up by D. Leaving moves nothing: the scroll position stays, so
+  // the profile stays where it was until the visitor scrolls.
   //
   // "Where it was" is captured when the tab is clicked, before React re-renders
   // (the bus event is synchronous), so it includes anything already mid-flight.
@@ -294,11 +190,10 @@ export default function PageShell({ children }: { children: React.ReactNode }) {
     const shell = ref.current;
     const parts = partsOf(shell);
 
-    // Entering: go to the dock. Always, with or without an animation: the lock
-    // would otherwise do it as a snap. Past the dock already (scrolled further
-    // down), nothing to do.
+    // Entering: go to the dock, with or without an animation. Past the dock
+    // already (scrolled further down), nothing to do.
     if (isPlay && window.scrollY < dockD.current - 1) {
-      scrollToDock(shell, dockD.current);
+      window.scrollTo(0, dockD.current);
     }
 
     // `data-animate` is the first-measure guard; before it, nothing is animated.
@@ -408,17 +303,6 @@ export default function PageShell({ children }: { children: React.ReactNode }) {
       })
       // Cancelled by a switch the other way; that one owns the canvas now.
       .catch(() => {});
-  }, [isPlay]);
-
-  // What is slid out of view shouldn't stay reachable by keyboard or screen
-  // reader: its links are behind the bar.
-  useEffect(() => {
-    const slide = ref.current?.querySelector<HTMLElement>(
-      "[data-profile-slide]",
-    );
-    // Only where the profile can't be scrolled to; on touch devices it can, and
-    // its links should work.
-    if (slide) slide.inert = isPlay && holdsDock();
   }, [isPlay]);
 
   // Browser chrome follows the page. The meta tag is only a hint at load, so it
