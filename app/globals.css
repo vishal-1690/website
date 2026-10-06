@@ -73,6 +73,37 @@
      .profile-slide pads its top by it and the floating avatar is offset by it. */
   --peek: 3.5rem;
 
+  /* The two blues of the play state, in one place: the page, and the light blue
+     used for guidelines. Plain (unregistered) so the sheet and the palette below
+     can both read them. */
+  --play-bg: rgb(0, 100, 230);
+  --play-line: rgb(194, 246, 255);
+
+  /* What <body> paints, i.e. the canvas behind everything (and what shows in
+     overscroll). Dark, always, while the play sheet fades in over it; it joins
+     the sheet once that has landed (html[data-canvas], set by PageShell). */
+  --canvas: #0a0a0b;
+}
+
+html[data-canvas="play"] {
+  --canvas: var(--play-bg);
+}
+
+/* How the colour change is drawn.
+
+   Normal path (html[data-sheet], set by PageShell once it knows the browser can
+   run Web Animations): the global tokens flip at once, and the page *looks* like
+   it fades because a fixed sheet of the new colour (.play-sheet) fades in over
+   the old canvas by opacity, which runs on the compositor. Nothing document-wide
+   is restyled per frame. The nav's own colours still ease, but only inside the
+   nav (see .nav-well).
+
+   Fallback (no `Element.animate`, so no data-sheet): the global tokens
+   themselves transition, which restyles the whole page every frame but needs no
+   script. The canvas follows --bg, and the sheet and its grid are the old
+   body::before. */
+html:not([data-sheet]) {
+  --canvas: var(--bg);
   transition:
     --bg var(--tint-dur) var(--mode-ease),
     --surface var(--tint-dur) var(--mode-ease),
@@ -81,16 +112,6 @@
     --text var(--tint-dur) var(--mode-ease),
     --text-muted var(--tint-dur) var(--mode-ease),
     --text-faint var(--tint-dur) var(--mode-ease),
-    --well-top var(--tint-dur) var(--mode-ease),
-    --well-bot var(--tint-dur) var(--mode-ease),
-    --well-hi var(--tint-dur) var(--mode-ease),
-    --well-lo var(--tint-dur) var(--mode-ease),
-    --well-line var(--tint-dur) var(--mode-ease),
-    --pill-top var(--tint-dur) var(--mode-ease),
-    --pill-bot var(--tint-dur) var(--mode-ease),
-    --pill-shade var(--tint-dur) var(--mode-ease),
-    --pill-hi var(--tint-dur) var(--mode-ease),
-    --tab-on var(--tint-dur) var(--mode-ease),
     --grid-line var(--tint-dur) var(--mode-ease);
 }
 
@@ -105,7 +126,7 @@
 :root:has([data-mode="play"]) {
   /* The two blues: --bg is the page, and the light blue (194, 246, 255) is the
      guideline colour, used for the grid. */
-  --bg: rgb(0, 100, 230);
+  --bg: var(--play-bg);
   --surface: rgb(26, 116, 236);
   --border: rgba(255, 255, 255, 0.24);
   --border-tile: rgba(255, 255, 255, 0.58);
@@ -114,7 +135,27 @@
   --text-muted: rgba(246, 248, 255, 0.8);
   --text-faint: rgba(246, 248, 255, 0.62);
 
-  /* A drawn track; the active chip is a solid sheet of white on it. */
+  --grid-line: color-mix(in srgb, var(--play-line) 20%, transparent);
+}
+
+/* The nav's colours are set and eased on the nav itself, not on :root, so the
+   per-frame restyle covers a handful of elements instead of the document. A
+   drawn track; the active chip is a solid sheet of white on it. */
+.nav-well {
+  transition:
+    --well-top var(--tint-dur) var(--mode-ease),
+    --well-bot var(--tint-dur) var(--mode-ease),
+    --well-hi var(--tint-dur) var(--mode-ease),
+    --well-lo var(--tint-dur) var(--mode-ease),
+    --well-line var(--tint-dur) var(--mode-ease),
+    --pill-top var(--tint-dur) var(--mode-ease),
+    --pill-bot var(--tint-dur) var(--mode-ease),
+    --pill-shade var(--tint-dur) var(--mode-ease),
+    --pill-hi var(--tint-dur) var(--mode-ease),
+    --tab-on var(--tint-dur) var(--mode-ease);
+}
+
+.shell[data-mode="play"] .nav-well {
   --well-top: rgba(255, 255, 255, 0.07);
   --well-bot: rgba(255, 255, 255, 0.07);
   --well-hi: rgba(255, 255, 255, 0);
@@ -125,9 +166,7 @@
   --pill-shade: rgba(0, 0, 0, 0);
   --pill-hi: rgba(0, 0, 0, 0);
   /* Page blue on the white chip. */
-  --tab-on: rgb(0, 100, 230);
-
-  --grid-line: rgba(194, 246, 255, 0.2);
+  --tab-on: var(--play-bg);
 }
 
 @media (min-width: 40rem) {
@@ -211,7 +250,7 @@ body {
 }
 
 body {
-  background: var(--bg);
+  background: var(--canvas);
   color: var(--text);
   font-family: var(--font-sans), ui-sans-serif, system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
@@ -854,6 +893,51 @@ body::before {
   background-position: center top;
 }
 
+/* The play sheet: the blue page and its guidelines as one fixed layer under the
+   content, shown by fading its opacity (PageShell animates it with Web
+   Animations). Opacity is composited, so the colour change costs the main thread
+   nothing per frame. The rule below is its resting state, so a direct load of
+   /play is already correct; the animation only plays over it on a switch.
+
+   It carries its own grid, so body::before is the fallback's grid only. */
+.play-sheet {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  opacity: 0;
+  background:
+    linear-gradient(
+        color-mix(in srgb, var(--play-line) 20%, transparent) 1px,
+        transparent 1px
+      )
+      center top / 7.5rem 7.5rem,
+    linear-gradient(
+        90deg,
+        color-mix(in srgb, var(--play-line) 20%, transparent) 1px,
+        transparent 1px
+      )
+      center top / 7.5rem 7.5rem,
+    var(--play-bg);
+}
+
+/* Only used where scrollbars are overlay (PageShell checks). With a classic
+   scrollbar, `scrollbar-gutter: stable` reserves a strip that no element can
+   paint: a fixed box is clipped to the scrollable area. That strip shows the
+   canvas, which stays dark for the whole fade, so the sheet left a dark bar down
+   the right edge (worst on the short play page, where the scrollbar itself is
+   gone and the bare strip is all that is left). There the token fade is used
+   instead, because it takes the canvas with it. */
+
+.shell[data-mode="play"] .play-sheet {
+  opacity: 1;
+}
+
+html:not([data-sheet]) .play-sheet,
+html[data-sheet] body::before {
+  display: none;
+}
+
 /* The header block: normally just the profile above the tabs. In play, the
    whole thing is a bar pinned to the top of the viewport.
 
@@ -913,7 +997,10 @@ body::before {
 }
 
 /* `--profile-h` is measured by PageShell. Until it is (and for no-JS) the
-   fallback makes the margin zero, so the profile simply stays put. */
+   fallback makes the margin zero, so the profile simply stays put. The margin is
+   never transitioned: the layout changes at once and PageShell animates
+   `transform` from the old position to the new one (a FLIP), which runs on the
+   compositor instead of re-flowing the page every frame. */
 .shell[data-mode="play"] .profile-slide {
   margin-top: calc(var(--peek) - var(--profile-h, var(--peek)));
 }
@@ -933,11 +1020,6 @@ body::before {
 
 .shell[data-mode="play"]:not([data-measured]) .profile-slide {
   flex-shrink: 0;
-}
-
-/* Only once PageShell has measured, so a direct load of /play doesn't animate. */
-.shell[data-animate] .profile-slide {
-  transition: margin-top var(--mode-dur) var(--mode-ease);
 }
 
 /* Progressive blur over the peek: three stacked backdrop blurs, each masked to
@@ -987,12 +1069,6 @@ body::before {
 .dock-nav {
   margin-top: 2rem;
   padding-bottom: 0;
-}
-
-.shell[data-animate] .dock-nav {
-  transition:
-    margin-top var(--mode-dur) var(--mode-ease),
-    padding-bottom var(--mode-dur) var(--mode-ease);
 }
 
 .shell[data-mode="play"] .dock-nav {

@@ -2,6 +2,7 @@
 
 import { useEffect, useId, useRef, useState } from "react";
 import { createAnimatable, createTimeline, cubicBezier } from "animejs";
+import { cssTimeMs } from "@/lib/css-time";
 import { site } from "@/content/site";
 
 /**
@@ -57,6 +58,8 @@ export default function HireBubble({
   // Set by the X only. Leaving play reopens the bubble unless the visitor had
   // dismissed it themselves.
   const dismissed = useRef(false);
+  // Set by the positioning effect below: re-reads where the avatar is.
+  const remeasure = useRef<(() => void) | null>(null);
 
   /**
    * The bubble belongs to the work/about pages, not the play state. It follows
@@ -91,16 +94,13 @@ export default function HireBubble({
         setPhase((p) => (p === "in" ? "out" : p));
         return;
       }
-      const slide = parseFloat(
-        getComputedStyle(document.documentElement).getPropertyValue(
-          "--mode-dur",
-        ),
-      );
       reopen = setTimeout(
         () => {
+          // The profile has landed by now; find the avatar before opening.
+          remeasure.current?.();
           if (!dismissed.current) setPhase("in");
         },
-        Number.isFinite(slide) ? slide : 640,
+        cssTimeMs("--mode-dur", 420),
       );
     });
     if (shell) {
@@ -388,41 +388,14 @@ export default function HireBubble({
     const ro = new ResizeObserver(scheduleUpdate);
     ro.observe(wrap);
 
-    /* The play state slides the whole profile up and down by transitioning a
-       margin. That moves the avatar without a scroll, a resize, or a change to
-       its own size, so none of the above fires and the bubble would be left
-       where the avatar *was*. Follow it every frame while that transition runs,
-       and once more when it ends. Transition events bubble, so one listener on
-       the document catches it. */
-    let following = false;
-    const follow = () => {
-      if (!following) return;
-      updateTargets();
-      requestAnimationFrame(follow);
-    };
-    const isSlide = (event: TransitionEvent) =>
-      event.propertyName === "margin-top" &&
-      event.target instanceof Element &&
-      event.target.hasAttribute("data-profile-slide");
-    const onSlideStart = (event: TransitionEvent) => {
-      if (!isSlide(event) || following) return;
-      following = true;
-      requestAnimationFrame(follow);
-    };
-    const onSlideEnd = (event: TransitionEvent) => {
-      if (!isSlide(event)) return;
-      following = false;
-      scheduleUpdate();
-    };
-    document.addEventListener("transitionrun", onSlideStart);
-    document.addEventListener("transitionend", onSlideEnd);
-    document.addEventListener("transitioncancel", onSlideEnd);
+    /* The play state moves the avatar without a scroll, a resize, or a change to
+       its own size, so none of the above fires. The bubble is closed while that
+       happens, so it only needs to re-measure once the avatar has landed: the
+       mode observer above calls this when it reopens it. */
+    remeasure.current = scheduleUpdate;
 
     return () => {
-      following = false;
-      document.removeEventListener("transitionrun", onSlideStart);
-      document.removeEventListener("transitionend", onSlideEnd);
-      document.removeEventListener("transitioncancel", onSlideEnd);
+      remeasure.current = null;
       if (measureRaf) cancelAnimationFrame(measureRaf);
       ro.disconnect();
       window.removeEventListener("scroll", scheduleUpdate);

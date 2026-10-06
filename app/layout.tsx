@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { Analytics } from "@vercel/analytics/next";
 import { SpeedInsights } from "@vercel/speed-insights/next";
@@ -19,6 +19,14 @@ const geistMono = Geist_Mono({
 
 const { profile } = site;
 const title = `${profile.name} — ${profile.tagline}`;
+
+// Tints the browser chrome (iOS toolbar and status area, Android address bar).
+// Without it iOS samples the page once at load and keeps that colour, so it went
+// stale across the play state. PageShell updates this tag as the mode changes;
+// this is the value the server renders, i.e. the dark theme.
+export const viewport: Viewport = {
+  themeColor: "#0a0a0b",
+};
 
 export const metadata: Metadata = {
   // Resolves the relative image paths below into the absolute URLs that

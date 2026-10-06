@@ -1,6 +1,6 @@
 "use client";
 
-import { useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import Link from "next/link";
 import { useSelectedLayoutSegment } from "next/navigation";
@@ -33,15 +33,19 @@ export default function SegmentedNav() {
   const committed =
     (TABS.find((tab) => tab.segment === segment) ?? TABS[0]).label;
 
-  // The tab the user just asked for, valid only while the route it was asked
-  // *from* is still the committed one. Once the route changes this stops
-  // matching and `committed` takes over, so there is nothing to reset.
-  const [requested, setRequested] = useState<{
-    label: string;
-    from: string | null;
-  } | null>(null);
-  const shown =
-    requested && requested.from === segment ? requested.label : committed;
+  // The tab the user just asked for, until the route actually changes. It is
+  // dropped the moment the committed segment changes (reset during render, the
+  // supported way to derive state from a changed value), so it can never outlive
+  // the navigation it was for. An earlier version left it in place and kept it
+  // "valid while the route it was asked from is committed", which is true again
+  // after Back: the stale request came back to life and held the old tab.
+  const [requested, setRequested] = useState<string | null>(null);
+  const [seenSegment, setSeenSegment] = useState(segment);
+  if (seenSegment !== segment) {
+    setSeenSegment(segment);
+    setRequested(null);
+  }
+  const shown = requested ?? committed;
 
   const navRef = useRef<HTMLElement>(null);
   const pillRef = useRef<HTMLSpanElement>(null);
@@ -102,6 +106,32 @@ export default function SegmentedNav() {
     return () => observer.disconnect();
   }, []);
 
+  // Back and forward change the route with no click, so nothing above would
+  // know a switch had started: the page would restyle and the chip would move
+  // only once the new route committed, and the outgoing content wouldn't ghost.
+  // Treat the new URL as the tab that was asked for, exactly as a click does.
+  // `popstate` fires before Next has rendered the new route, so the page is
+  // still as the visitor left it when the listeners (PageShell's snapshot) read it.
+  const committedRef = useRef(committed);
+  useLayoutEffect(() => {
+    committedRef.current = committed;
+  }, [committed]);
+
+  useEffect(() => {
+    const onPop = () => {
+      const path = location.pathname.replace(/\/$/, "") || "/";
+      const tab = TABS.find((t) => t.href === path);
+      if (!tab) return;
+      setRequested(tab.label);
+      routeTransition.emit(
+        tab.label === committedRef.current ? "cancel" : "leave",
+        tab.label,
+      );
+    };
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, []);
+
   const onTabClick = (
     event: React.MouseEvent<HTMLAnchorElement>,
     label: string,
@@ -117,7 +147,7 @@ export default function SegmentedNav() {
       return;
     }
     const apply = () => {
-      setRequested({ label, from: segment });
+      setRequested(label);
       // Going back to the tab we're on abandons any switch in flight; anything
       // else starts one. Navigation itself is left to <Link>.
       routeTransition.emit(label === committed ? "cancel" : "leave", label);
