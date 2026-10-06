@@ -1129,6 +1129,33 @@ html[data-sheet] body::before {
   }
 }
 
+/* Temporary "WIP!" on the play page (components/PlayWip.tsx). Big and tilted; the
+   tilt is on the wrapper so the stroke animation's own transform can't undo it.
+   Hidden until the component has set its strokes to "not drawn yet", so the
+   finished word never shows before it is written. */
+.play-wip {
+  width: min(94%, 36rem);
+  margin: 3rem auto 2rem;
+  color: var(--text);
+  transform: rotate(-9deg);
+  transform-origin: 50% 60%;
+}
+
+.play-wip > svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  overflow: visible;
+  visibility: hidden;
+  /* On the whole drawing, not the strokes, so where they overlap they don't
+     double up. */
+  opacity: 0.72;
+}
+
+.play-wip > svg[data-ready] {
+  visibility: visible;
+}
+
 .play-grid {
   display: grid;
   gap: 1.5rem;

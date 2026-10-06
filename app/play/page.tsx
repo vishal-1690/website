@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import PlayWip from "@/components/PlayWip";
 
 export const metadata: Metadata = {
   title: "Play",
@@ -36,6 +37,10 @@ export default function PlayPage() {
           work. Coming soon.
         </p>
       </div>
+
+      {/* Temporary: remove (and components/PlayWip.tsx) once there is real work
+          to show. */}
+      <PlayWip />
     </section>
   );
 }
