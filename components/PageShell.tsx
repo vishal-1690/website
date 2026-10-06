@@ -14,6 +14,17 @@ function partsOf(shell: HTMLElement | null) {
   return dock && main ? { dock, main } : null;
 }
 
+/**
+ * Whether the page is *held* at the dock in play: only on devices with a fine
+ * pointer and hover (desktop). On touch devices the page docks on entry but then
+ * scrolls freely: the visitor can scroll up and bring the profile into view like
+ * on any page. That drops the upward lock, the pin and the clamp where they were
+ * hardest to get right (native touch momentum can't be cancelled or scaled).
+ */
+function holdsDock() {
+  return window.matchMedia("(hover: hover) and (pointer: fine)").matches;
+}
+
 let pendingUnpins = 0;
 
 /**
@@ -135,8 +146,13 @@ export default function PageShell({ children }: { children: React.ReactNode }) {
           `${nav.offsetTop + nav.offsetHeight - dockD.current}px`,
         );
       }
-      // The size changed (resize, rotation, font load): stay docked.
-      if (inPlay.current && window.scrollY < dockD.current - 1) {
+      // The size changed (resize, rotation, font load): stay docked, where the
+      // dock is held. Elsewhere the visitor may have scrolled up on purpose.
+      if (
+        inPlay.current &&
+        holdsDock() &&
+        window.scrollY < dockD.current - 1
+      ) {
         scrollToDock(shell, dockD.current);
       }
     };
@@ -174,7 +190,7 @@ export default function PageShell({ children }: { children: React.ReactNode }) {
   // and a scroll listener catches whatever gets past (keys, the scrollbar). Only
   // upward is locked, because the play content may be taller than the screen.
   useEffect(() => {
-    if (!isPlay) return;
+    if (!isPlay || !holdsDock()) return;
 
     const atDock = () => window.scrollY <= dockD.current + 1;
     const below = () => window.scrollY < dockD.current - 1;
@@ -400,7 +416,9 @@ export default function PageShell({ children }: { children: React.ReactNode }) {
     const slide = ref.current?.querySelector<HTMLElement>(
       "[data-profile-slide]",
     );
-    if (slide) slide.inert = isPlay;
+    // Only where the profile can't be scrolled to; on touch devices it can, and
+    // its links should work.
+    if (slide) slide.inert = isPlay && holdsDock();
   }, [isPlay]);
 
   // Browser chrome follows the page. The meta tag is only a hint at load, so it

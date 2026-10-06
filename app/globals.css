@@ -982,23 +982,28 @@ html[data-sheet] body::before {
   }
 }
 
+/* Desktop only (a fine pointer with hover). On touch devices nothing holds the
+   page at the dock: the visitor can scroll up and the profile comes into view
+   like on any page, so there is nothing to pin (see PageShell, `holdsDock`). */
 @supports (animation-timeline: scroll()) {
-  .shell[data-mode="play"][data-measured] .dock,
-  .shell[data-mode="play"][data-measured] .page-main {
-    animation: dock-pin linear backwards;
-    animation-timeline: scroll(root block);
-    /* Ending 1px short of D (the JS clamp's own tolerance): the scroll offset is
-       rounded to whole pixels but D is fractional, so docked it can sit just
-       under D and would otherwise leave a sub-pixel transform on at rest. */
-    animation-range: 0 calc(var(--profile-h) - var(--peek) - 1px);
-  }
+  @media (hover: hover) and (pointer: fine) {
+    .shell[data-mode="play"][data-measured] .dock,
+    .shell[data-mode="play"][data-measured] .page-main {
+      animation: dock-pin linear backwards;
+      animation-timeline: scroll(root block);
+      /* Ending 1px short of D (the JS clamp's own tolerance): the scroll offset is
+         rounded to whole pixels but D is fractional, so docked it can sit just
+         under D and would otherwise leave a sub-pixel transform on at rest. */
+      animation-range: 0 calc(var(--profile-h) - var(--peek) - 1px);
+    }
 
-  /* Off for the frames around a programmatic jump to the dock (PageShell,
-     `scrollToDock`): the animation reads the scroll offset a frame late, and at
-     the dock it isn't needed. More specific than the rule above, to win. */
-  .shell[data-mode="play"][data-measured][data-unpin] .dock,
-  .shell[data-mode="play"][data-measured][data-unpin] .page-main {
-    animation: none;
+    /* Off for the frames around a programmatic jump to the dock (PageShell,
+       `scrollToDock`): the animation reads the scroll offset a frame late, and at
+       the dock it isn't needed. More specific than the rule above, to win. */
+    .shell[data-mode="play"][data-measured][data-unpin] .dock,
+    .shell[data-mode="play"][data-measured][data-unpin] .page-main {
+      animation: none;
+    }
   }
 }
 
