@@ -54,11 +54,67 @@ export default function HireBubble({
   // unique — duplicate ids would make one instance reference the other's.
   const filterId = `goo-${useId().replace(/:/g, "")}`;
 
+  // Set by the X only. Leaving play reopens the bubble unless the visitor had
+  // dismissed it themselves.
+  const dismissed = useRef(false);
+
+  /**
+   * The bubble belongs to the work/about pages, not the play state. It follows
+   * the shell's `data-mode` (PageShell sets it at click time, and in the server
+   * HTML for a direct load of /play), so it needs no state of its own for that:
+   *
+   *  - Entering play closes it for real, so it isn't left open behind the bar.
+   *  - Landing straight on play never auto-opens it.
+   *  - Leaving play reopens it, once the profile has slid back and the avatar
+   *    is where it will stay.
+   */
   useEffect(() => {
+    const shell = wrapRef.current?.closest<HTMLElement>(".shell");
+    const inPlay = () => shell?.dataset.mode === "play";
+
+    let reopen: ReturnType<typeof setTimeout> | undefined;
+    let wasPlay = inPlay();
+
     // Late enough that the page has settled, so the motion reads as a thought
     // arriving rather than part of the initial paint.
-    const t = setTimeout(() => setPhase("in"), 1200);
-    return () => clearTimeout(t);
+    const first = setTimeout(() => {
+      if (!inPlay()) setPhase("in");
+    }, 1200);
+
+    const observer = new MutationObserver(() => {
+      const now = inPlay();
+      if (now === wasPlay) return;
+      wasPlay = now;
+      clearTimeout(reopen);
+
+      if (now) {
+        setPhase((p) => (p === "in" ? "out" : p));
+        return;
+      }
+      const slide = parseFloat(
+        getComputedStyle(document.documentElement).getPropertyValue(
+          "--mode-dur",
+        ),
+      );
+      reopen = setTimeout(
+        () => {
+          if (!dismissed.current) setPhase("in");
+        },
+        Number.isFinite(slide) ? slide : 640,
+      );
+    });
+    if (shell) {
+      observer.observe(shell, {
+        attributes: true,
+        attributeFilter: ["data-mode"],
+      });
+    }
+
+    return () => {
+      clearTimeout(first);
+      clearTimeout(reopen);
+      observer.disconnect();
+    };
   }, []);
 
   useEffect(
@@ -332,7 +388,41 @@ export default function HireBubble({
     const ro = new ResizeObserver(scheduleUpdate);
     ro.observe(wrap);
 
+    /* The play state slides the whole profile up and down by transitioning a
+       margin. That moves the avatar without a scroll, a resize, or a change to
+       its own size, so none of the above fires and the bubble would be left
+       where the avatar *was*. Follow it every frame while that transition runs,
+       and once more when it ends. Transition events bubble, so one listener on
+       the document catches it. */
+    let following = false;
+    const follow = () => {
+      if (!following) return;
+      updateTargets();
+      requestAnimationFrame(follow);
+    };
+    const isSlide = (event: TransitionEvent) =>
+      event.propertyName === "margin-top" &&
+      event.target instanceof Element &&
+      event.target.hasAttribute("data-profile-slide");
+    const onSlideStart = (event: TransitionEvent) => {
+      if (!isSlide(event) || following) return;
+      following = true;
+      requestAnimationFrame(follow);
+    };
+    const onSlideEnd = (event: TransitionEvent) => {
+      if (!isSlide(event)) return;
+      following = false;
+      scheduleUpdate();
+    };
+    document.addEventListener("transitionrun", onSlideStart);
+    document.addEventListener("transitionend", onSlideEnd);
+    document.addEventListener("transitioncancel", onSlideEnd);
+
     return () => {
+      following = false;
+      document.removeEventListener("transitionrun", onSlideStart);
+      document.removeEventListener("transitionend", onSlideEnd);
+      document.removeEventListener("transitioncancel", onSlideEnd);
       if (measureRaf) cancelAnimationFrame(measureRaf);
       ro.disconnect();
       window.removeEventListener("scroll", scheduleUpdate);
@@ -347,6 +437,7 @@ export default function HireBubble({
       clearTimeout(hoverTimer.current);
       hoverTimer.current = null;
     }
+    dismissed.current = false;
     setPhase("in");
   }
 
@@ -367,6 +458,7 @@ export default function HireBubble({
 
   /** Only ever called explicitly via the X. */
   function hide() {
+    dismissed.current = true;
     setPhase("out");
   }
 

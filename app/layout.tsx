@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { Analytics } from "@vercel/analytics/next";
 import "./globals.css";
+import PageShell from "@/components/PageShell";
 import Profile from "@/components/Profile";
 import { site } from "@/content/site";
 
@@ -66,12 +67,19 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
         {/* rem, not px, so the column scales with the root font size and the
             line length stays constant instead of shrinking as type grows.
             The avatar hangs outside this column via absolute positioning, so
-            no gutter is reserved and no offset is needed below. */}
-        <div className="mx-auto max-w-[45rem] px-5 py-14 sm:px-6 sm:py-20">
-          {/* Outside template.tsx, so it stays still while pages blur in. */}
-          <Profile />
-          <main className="mt-10">{children}</main>
-        </div>
+            no gutter is reserved and no offset is needed below.
+            Header and main are separate columns so play can spread the main
+            one; the top padding lives inside the profile (it slides away with
+            it) so the docked bar can sit flush with the viewport. */}
+        <PageShell>
+          {/* Outside template.tsx, so it stays still while pages pop in. */}
+          <div className="dock mx-auto max-w-[45rem] px-5 sm:px-6">
+            <Profile />
+          </div>
+          <main className="page-main mx-auto mt-10 max-w-[45rem] px-5 sm:px-6">
+            {children}
+          </main>
+        </PageShell>
         <Analytics />
       </body>
     </html>

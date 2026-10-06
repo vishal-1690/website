@@ -1,5 +1,34 @@
 @import "tailwindcss";
 
+/* --- Colour tokens ----------------------------------------------------------
+   Registered with `@property` so the play state can *transition* them: an
+   unregistered custom property is an opaque string and swaps in one frame. Each
+   needs a syntax and an initial value (the dark-theme value, which `:root`
+   below repeats). Everything downstream, gradients and shadows included,
+   re-resolves from these every frame, so one transition on `:root` animates the
+   whole page. */
+@property --bg { syntax: "<color>"; inherits: true; initial-value: #0a0a0b; }
+@property --surface { syntax: "<color>"; inherits: true; initial-value: #121214; }
+@property --border { syntax: "<color>"; inherits: true; initial-value: #26262b; }
+@property --border-tile { syntax: "<color>"; inherits: true; initial-value: #4a4a55; }
+@property --text { syntax: "<color>"; inherits: true; initial-value: #f2f2f4; }
+@property --text-muted { syntax: "<color>"; inherits: true; initial-value: #a1a1aa; }
+@property --text-faint { syntax: "<color>"; inherits: true; initial-value: #6b6b76; }
+/* Nav chrome: the track, and the recessed chip that slides under the tabs. */
+@property --well-top { syntax: "<color>"; inherits: true; initial-value: #33333b; }
+@property --well-bot { syntax: "<color>"; inherits: true; initial-value: #2a2a31; }
+@property --well-hi { syntax: "<color>"; inherits: true; initial-value: rgba(255, 255, 255, 0.08); }
+@property --well-lo { syntax: "<color>"; inherits: true; initial-value: rgba(0, 0, 0, 0.25); }
+@property --well-line { syntax: "<color>"; inherits: true; initial-value: rgba(255, 255, 255, 0); }
+@property --pill-top { syntax: "<color>"; inherits: true; initial-value: #0e0e11; }
+@property --pill-bot { syntax: "<color>"; inherits: true; initial-value: #16161a; }
+@property --pill-shade { syntax: "<color>"; inherits: true; initial-value: rgba(0, 0, 0, 0.8); }
+@property --pill-hi { syntax: "<color>"; inherits: true; initial-value: rgba(255, 255, 255, 0.06); }
+@property --tab-on { syntax: "<color>"; inherits: true; initial-value: #f2f2f4; }
+/* The page grid's line colour (see body::before). Transparent in the light-blue
+   hue, not `transparent`, so it fades in without passing through grey. */
+@property --grid-line { syntax: "<color>"; inherits: true; initial-value: rgba(194, 246, 255, 0); }
+
 :root {
   color-scheme: dark;
 
@@ -18,6 +47,113 @@
   /* Retained only for selection and focus rings — never for prose or links. */
   --accent: #7cf7c4;
   --accent-dim: #7cf7c433;
+
+  --well-top: #33333b;
+  --well-bot: #2a2a31;
+  --well-hi: rgba(255, 255, 255, 0.08);
+  --well-lo: rgba(0, 0, 0, 0.25);
+  --well-line: rgba(255, 255, 255, 0);
+  --pill-top: #0e0e11;
+  --pill-bot: #16161a;
+  --pill-shade: rgba(0, 0, 0, 0.8);
+  --pill-hi: rgba(255, 255, 255, 0.06);
+  --tab-on: #f2f2f4;
+  --grid-line: rgba(194, 246, 255, 0);
+
+  /* Play state timing. `--mode-dur` is the profile's dock-up (and the veils);
+     `--tint-dur` is the colour change, the same by default so they read as one
+     gesture. Entering play by click zeroes `--tint-dur` (html[data-blast]) and
+     lets a circular reveal (lib/play-blast.ts) do the colour change instead. */
+  --mode-dur: 420ms;
+  --tint-dur: var(--mode-dur);
+  --mode-ease: cubic-bezier(0.32, 0.72, 0, 1);
+
+  /* The page's top margin, and also how much of the profile stays visible above
+     the tabs once docked, so the gutter feels like the page's own margin.
+     .profile-slide pads its top by it and the floating avatar is offset by it. */
+  --peek: 3.5rem;
+
+  transition:
+    --bg var(--tint-dur) var(--mode-ease),
+    --surface var(--tint-dur) var(--mode-ease),
+    --border var(--tint-dur) var(--mode-ease),
+    --border-tile var(--tint-dur) var(--mode-ease),
+    --text var(--tint-dur) var(--mode-ease),
+    --text-muted var(--tint-dur) var(--mode-ease),
+    --text-faint var(--tint-dur) var(--mode-ease),
+    --well-top var(--tint-dur) var(--mode-ease),
+    --well-bot var(--tint-dur) var(--mode-ease),
+    --well-hi var(--tint-dur) var(--mode-ease),
+    --well-lo var(--tint-dur) var(--mode-ease),
+    --well-line var(--tint-dur) var(--mode-ease),
+    --pill-top var(--tint-dur) var(--mode-ease),
+    --pill-bot var(--tint-dur) var(--mode-ease),
+    --pill-shade var(--tint-dur) var(--mode-ease),
+    --pill-hi var(--tint-dur) var(--mode-ease),
+    --tab-on var(--tint-dur) var(--mode-ease),
+    --grid-line var(--tint-dur) var(--mode-ease);
+}
+
+/* --- Play state: blueprint ----------------------------------------------------
+   Entered by the play tab (PageShell sets data-mode="play" at click time). Cobalt
+   paper, white linework: surfaces are drawn with lines rather than filled, so the
+   dark theme's raised/recessed depth gives way to outline. Only tokens change
+   here; components that read them follow, and the transition above animates it.
+
+   Matched on :root via :has() so the page background, scrollbar gutter and
+   overscroll all change with the page, not just the shell inside it. */
+:root:has([data-mode="play"]) {
+  /* The two blues: --bg is the page, and the light blue (194, 246, 255) is the
+     guideline colour, used for the grid. */
+  --bg: rgb(0, 100, 230);
+  --surface: rgb(26, 116, 236);
+  --border: rgba(255, 255, 255, 0.24);
+  --border-tile: rgba(255, 255, 255, 0.58);
+
+  --text: #f6f8ff;
+  --text-muted: rgba(246, 248, 255, 0.8);
+  --text-faint: rgba(246, 248, 255, 0.62);
+
+  /* A drawn track; the active chip is a solid sheet of white on it. */
+  --well-top: rgba(255, 255, 255, 0.07);
+  --well-bot: rgba(255, 255, 255, 0.07);
+  --well-hi: rgba(255, 255, 255, 0);
+  --well-lo: rgba(255, 255, 255, 0);
+  --well-line: rgba(255, 255, 255, 0.62);
+  --pill-top: #f6f8ff;
+  --pill-bot: #f6f8ff;
+  --pill-shade: rgba(0, 0, 0, 0);
+  --pill-hi: rgba(0, 0, 0, 0);
+  /* Page blue on the white chip. */
+  --tab-on: rgb(0, 100, 230);
+
+  --grid-line: rgba(194, 246, 255, 0.2);
+}
+
+@media (min-width: 40rem) {
+  :root {
+    --peek: 5rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --mode-dur: 0ms;
+  }
+}
+
+/* The blast: the colour change is instant, because the reveal is the animation.
+   Set for the length of the view transition only. */
+html[data-blast] {
+  --tint-dur: 0ms;
+}
+
+/* The browser's default is a cross-fade between the old and new page. Take it
+   off: the new page is revealed through a circle animated from JS instead. */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation: none;
+  mix-blend-mode: normal;
 }
 
 @theme inline {
@@ -357,6 +493,12 @@ button:focus-visible {
   display: block;
 }
 
+/* The slide's own top padding is the page's top margin (it moved here from the
+   column so it slides away with the profile). */
+.profile-slide {
+  padding-top: var(--peek);
+}
+
 /* Same 1320px as --breakpoint-avatar; a media query can't read the variable. */
 @media (min-width: 1320px) {
   .header-grid {
@@ -367,7 +509,8 @@ button:focus-visible {
      Anchored to the column's left edge and grows leftward from there. */
   .avatar-float {
     position: absolute;
-    top: 0;
+    /* Absolute offsets are from the padding box, so clear the slide's padding. */
+    top: var(--peek);
     right: calc(100% + 2.5rem);
   }
 }
@@ -461,10 +604,11 @@ button:focus-visible {
   position: relative;
   isolation: isolate;
   border-radius: var(--radius-tab);
-  background: linear-gradient(180deg, #33333b 0%, #2a2a31 100%);
+  background: linear-gradient(180deg, var(--well-top) 0%, var(--well-bot) 100%);
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.08),
-    inset 0 -1px 0 rgba(0, 0, 0, 0.25),
+    inset 0 0 0 1px var(--well-line),
+    inset 0 1px 0 var(--well-hi),
+    inset 0 -1px 0 var(--well-lo),
     0 1px 2px rgba(0, 0, 0, 0.4);
 }
 
@@ -489,14 +633,14 @@ button:focus-visible {
 
 .nav-pill,
 .nav-well:not([data-ready]) .nav-tab-active {
-  background: linear-gradient(180deg, #0e0e11 0%, #16161a 100%);
+  background: linear-gradient(180deg, var(--pill-top) 0%, var(--pill-bot) 100%);
   box-shadow:
-    inset 0 2px 4px rgba(0, 0, 0, 0.8),
-    inset 0 -1px 0 rgba(255, 255, 255, 0.06);
+    inset 0 2px 4px var(--pill-shade),
+    inset 0 -1px 0 var(--pill-hi);
 }
 
 .nav-tab-active {
-  color: var(--text);
+  color: var(--tab-on);
 }
 
 /* Matches the well's 4px padding. Left, width and the translate are all written
@@ -690,6 +834,223 @@ button:focus-visible {
   opacity: 0;
   /* Above every slide: slides take the pile's z-index (up to N) while they fly. */
   z-index: 1000;
+}
+
+/* --- Play state: grid, dock, spread ------------------------------------------
+   The blueprint sheet: widely spaced guidelines in the light blue, fixed to the
+   viewport so they stay put while the page scrolls over them. Invisible outside
+   play (the line colour is transparent), and fades in with the other tokens. */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background-image:
+    linear-gradient(var(--grid-line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid-line) 1px, transparent 1px);
+  background-size: 7.5rem 7.5rem;
+  /* Centred on the column, so a line falls on its axis whatever the width. */
+  background-position: center top;
+}
+
+/* The header block: normally just the profile above the tabs. In play, the
+   whole thing is a bar pinned to the top of the viewport.
+
+   `position` is the only thing that changes between the two (sticky and static
+   both keep it in flow), and `.shell` is the sticky containing block, which is
+   why header and main are siblings under it. */
+.dock {
+  isolation: isolate;
+}
+
+.shell[data-mode="play"] .dock {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+}
+
+/* Everything that scrolls under the bar is veiled: a tinted pane that blurs what
+   is behind it and fades out along its lower edge, so content doesn't hit a hard
+   line. Full-bleed, past the column. Present always, shown only in play. */
+.dock::before {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  top: 0;
+  bottom: -1.5rem;
+  left: 50%;
+  width: 100vw;
+  margin-left: -50vw;
+  /* The page grid again, crisp, on top of the tint: the veil would otherwise
+     blur and bury it, and the guidelines would start abruptly under the tabs.
+     `fixed` pins it to the viewport like body::before, so the two coincide. */
+  background:
+    linear-gradient(var(--grid-line) 1px, transparent 1px) center top / 7.5rem
+      7.5rem fixed,
+    linear-gradient(90deg, var(--grid-line) 1px, transparent 1px) center top /
+      7.5rem 7.5rem fixed,
+    color-mix(in srgb, var(--bg) 72%, transparent);
+  -webkit-backdrop-filter: blur(14px);
+  backdrop-filter: blur(14px);
+  -webkit-mask-image: linear-gradient(#000 calc(100% - 1.5rem), transparent);
+  mask-image: linear-gradient(#000 calc(100% - 1.5rem), transparent);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--mode-dur) var(--mode-ease);
+}
+
+.shell[data-mode="play"] .dock::before {
+  opacity: 1;
+}
+
+/* Clipping box for the profile. Its height is the slide's height plus the
+   slide's (negative) margin, so it shrinks to the peek on its own. flow-root
+   stops that margin collapsing through to the dock. */
+.profile-top {
+  position: relative;
+  display: flow-root;
+}
+
+/* `--profile-h` is measured by PageShell. Until it is (and for no-JS) the
+   fallback makes the margin zero, so the profile simply stays put. */
+.shell[data-mode="play"] .profile-slide {
+  margin-top: calc(var(--peek) - var(--profile-h, var(--peek)));
+}
+
+/* Before PageShell has measured (server HTML, hydration, no JS) the margin above
+   has no height to work from. A direct load of /play would show the whole
+   profile for a beat and then snap it away, so until then pin the profile's
+   bottom into a peek-high box instead. It paints exactly what the margin version
+   does, so `data-measured` swaps one for the other with no visible change. */
+.shell[data-mode="play"]:not([data-measured]) .profile-top {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  height: var(--peek);
+  overflow: clip;
+}
+
+.shell[data-mode="play"]:not([data-measured]) .profile-slide {
+  flex-shrink: 0;
+}
+
+/* Only once PageShell has measured, so a direct load of /play doesn't animate. */
+.shell[data-animate] .profile-slide {
+  transition: margin-top var(--mode-dur) var(--mode-ease);
+}
+
+/* Progressive blur over the peek: three stacked backdrop blurs, each masked to
+   fade out sooner than the one beneath it, so blur builds smoothly toward the top
+   edge instead of stepping. A tint under them dissolves the first line into the
+   bar. */
+.peek-veil {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0;
+  background: linear-gradient(to bottom, var(--bg) 0%, transparent 85%);
+  transition: opacity var(--mode-dur) var(--mode-ease);
+}
+
+.peek-veil > i {
+  position: absolute;
+  inset: 0;
+}
+
+.peek-veil > i:nth-child(1) {
+  -webkit-backdrop-filter: blur(1.5px);
+  backdrop-filter: blur(1.5px);
+  -webkit-mask-image: linear-gradient(to bottom, #000 0%, #000 55%, transparent 100%);
+  mask-image: linear-gradient(to bottom, #000 0%, #000 55%, transparent 100%);
+}
+
+.peek-veil > i:nth-child(2) {
+  -webkit-backdrop-filter: blur(4px);
+  backdrop-filter: blur(4px);
+  -webkit-mask-image: linear-gradient(to bottom, #000 0%, transparent 70%);
+  mask-image: linear-gradient(to bottom, #000 0%, transparent 70%);
+}
+
+.peek-veil > i:nth-child(3) {
+  -webkit-backdrop-filter: blur(9px);
+  backdrop-filter: blur(9px);
+  -webkit-mask-image: linear-gradient(to bottom, #000 0%, transparent 45%);
+  mask-image: linear-gradient(to bottom, #000 0%, transparent 45%);
+}
+
+.shell[data-mode="play"] .peek-veil {
+  opacity: 1;
+}
+
+/* The gap between profile and tabs tightens as it docks. */
+.dock-nav {
+  margin-top: 2rem;
+  padding-bottom: 0;
+}
+
+.shell[data-animate] .dock-nav {
+  transition:
+    margin-top var(--mode-dur) var(--mode-ease),
+    padding-bottom var(--mode-dur) var(--mode-ease);
+}
+
+.shell[data-mode="play"] .dock-nav {
+  margin-top: 0.5rem;
+  padding-bottom: 0.75rem;
+}
+
+/* The "open to work" bubble has no place on the play page. HireBubble closes
+   itself on entering play and reopens on leaving; this hides it at once, since
+   its close animation would otherwise play out over the sliding profile. */
+.shell[data-mode="play"] .hire-root {
+  visibility: hidden;
+}
+
+/* Spread: the play page takes the screen instead of the reading column. Keyed
+   on the *committed* route (data-page), not the requested one, so the outgoing
+   page isn't re-wrapped while it is still ghosted; the width changes under the
+   incoming page's pop. */
+.shell[data-page="play"] .page-main {
+  max-width: 90rem;
+}
+
+/* Content typography in play: set as drawing annotation. The route's own body
+   swaps at the pop, so the font changes with the page, not under the ghost. */
+.play-page {
+  font-family: var(--font-mono), ui-monospace, monospace;
+}
+
+/* The reading column inside the spread page: the same text width as the dock and
+   the other pages (45rem less their side padding, px-5 / sm:px-6), centred, so
+   words line up with the tabs while the content around them goes wide. */
+.play-col {
+  width: 100%;
+  max-width: calc(45rem - 2.5rem);
+  margin-inline: auto;
+}
+
+@media (min-width: 40rem) {
+  .play-col {
+    max-width: calc(45rem - 3rem);
+  }
+}
+
+.play-grid {
+  display: grid;
+  gap: 1.5rem;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 17rem), 1fr));
+}
+
+.play-cell {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  min-height: 12rem;
+  padding: 0.75rem;
+  border: 1px solid var(--border-tile);
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--bg) 70%, transparent);
 }
 
 /* Row hover reads in the type, not in a background fill. */

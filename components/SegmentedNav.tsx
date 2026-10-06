@@ -1,9 +1,11 @@
 "use client";
 
 import { useLayoutEffect, useRef, useState } from "react";
+import { flushSync } from "react-dom";
 import Link from "next/link";
 import { useSelectedLayoutSegment } from "next/navigation";
 import { waapi, type WAAPIAnimation } from "animejs";
+import { blast } from "@/lib/play-blast";
 import { routeTransition } from "@/lib/route-transition";
 
 const TABS = [
@@ -114,10 +116,26 @@ export default function SegmentedNav() {
     ) {
       return;
     }
-    setRequested({ label, from: segment });
-    // Going back to the tab we're on abandons any switch in flight; anything
-    // else starts one. Navigation itself is left to <Link>.
-    routeTransition.emit(label === committed ? "cancel" : "leave");
+    const apply = () => {
+      setRequested({ label, from: segment });
+      // Going back to the tab we're on abandons any switch in flight; anything
+      // else starts one. Navigation itself is left to <Link>.
+      routeTransition.emit(label === committed ? "cancel" : "leave", label);
+    };
+
+    // Entering play blooms from the click. The change is applied inside the
+    // transition (flushSync, so it lands before the browser's "after" picture);
+    // where that isn't available this falls through to the plain colour fade.
+    if (label === "play" && committed !== "play") {
+      const rect = event.currentTarget.getBoundingClientRect();
+      // Keyboard activation reports a click at 0,0; bloom from the tab instead.
+      const origin =
+        event.detail === 0
+          ? { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 }
+          : { x: event.clientX, y: event.clientY };
+      if (blast(origin, () => flushSync(apply))) return;
+    }
+    apply();
   };
 
   return (
